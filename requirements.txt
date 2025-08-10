@@ -1,5 +1,6 @@
-streamlit
-streamlit-lottie
 matplotlib
+streamlit
 pandas
+numpy
+plotly
 openpyxl

@@ -4,7 +4,8 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+import plotly
+import plotly.graph_objects as go
 from io import BytesIO
 
 st.set_page_config(page_title="Calculadora de Hipotecas", layout="centered")
@@ -87,15 +88,23 @@ def descargar_df(df):
     df.to_excel(output, index=False)
     return output.getvalue()
 
-def plot_evolucion(df, titulo):
-    fig, ax = plt.subplots()
-    ax.plot(df["Año"], df["Capital pendiente"], marker="o", label="Capital pendiente")
-    ax.plot(df["Año"], df["Intereses pagados"].cumsum(), marker="x", label="Intereses acumulados")
-    ax.set_xlabel("Año")
-    ax.set_ylabel("€")
-    ax.set_title(titulo)
-    ax.legend()
-    st.pyplot(fig)
+def plot_evolucion_plotly(df, titulo):
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df["Año"], y=df["Capital pendiente"],
+        mode="lines+markers", name="Capital pendiente"
+    ))
+    fig.add_trace(go.Scatter(
+        x=df["Año"], y=df["Intereses pagados"].cumsum(),
+        mode="lines+markers", name="Intereses acumulados"
+    ))
+    fig.update_layout(
+        title=titulo,
+        xaxis_title="Año",
+        yaxis_title="€",
+        hovermode="x unified"
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 # =============================
 # 0. PÁGINA INICIO
@@ -136,9 +145,6 @@ if pagina == "Inicio":
 
     st.info("Navega por las secciones desde el menú lateral izquierdo. ¡Empieza a analizar tu hipoteca ahora!")
 
-    # (Opcional) Imagen o logo
-    # st.image("https://cdn.pixabay.com/photo/2016/11/29/06/15/architecture-1867187_1280.jpg", caption="Tu futuro, tu casa", use_column_width=True)
-
 # =============================
 # 1. PÁGINA HIPOTECA FIJA
 # =============================
@@ -161,7 +167,6 @@ elif pagina == "Hipoteca Fija":
         st.write(f"**Cuota mensual:** {cuota:,.2f} €")
         st.write(f"**Intereses totales:** {intereses_totales:,.2f} €")
 
-        # -------- CUADRO DE AMORTIZACIÓN FIJA --------
         df_cuadro = cuadro_amortizacion_fija(principal, years, r, cuota)
         st.write("### Cuadro de amortización (anual)")
         st.dataframe(df_cuadro.style.format({
@@ -171,7 +176,6 @@ elif pagina == "Hipoteca Fija":
             "Capital pendiente": "{:,.2f} €"
         }), use_container_width=True)
 
-        # -------- DESCARGA --------
         st.download_button(
             label="Descargar cuadro (Excel)",
             data=descargar_df(df_cuadro),
@@ -179,9 +183,8 @@ elif pagina == "Hipoteca Fija":
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-        # -------- GRÁFICO --------
         st.write("### Evolución de capital pendiente e intereses")
-        plot_evolucion(df_cuadro, "Evolución Hipoteca Fija")
+        plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Fija")
 
 # =============================
 # 2. PÁGINA HIPOTECA MIXTA
@@ -226,7 +229,6 @@ elif pagina == "Hipoteca Mixta":
         st.write(f"**Cuota mensual (variable):** {cuota_variable:,.2f} €")
         st.write(f"**Intereses totales:** {intereses_mixta:,.2f} €")
 
-        # -------- CUADRO DE AMORTIZACIÓN MIXTA --------
         df_cuadro = cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var, cuota_fija, cuota_variable)
         st.write("### Cuadro de amortización (anual)")
         st.dataframe(df_cuadro.style.format({
@@ -236,7 +238,6 @@ elif pagina == "Hipoteca Mixta":
             "Capital pendiente": "{:,.2f} €"
         }), use_container_width=True)
 
-        # -------- DESCARGA --------
         st.download_button(
             label="Descargar cuadro (Excel)",
             data=descargar_df(df_cuadro),
@@ -244,9 +245,8 @@ elif pagina == "Hipoteca Mixta":
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-        # -------- GRÁFICO --------
         st.write("### Evolución de capital pendiente e intereses")
-        plot_evolucion(df_cuadro, "Evolución Hipoteca Mixta")
+        plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Mixta")
 
 # =============================
 # 3. PÁGINA COMPARATIVA FIJA VS MIXTA
@@ -293,15 +293,23 @@ elif pagina == "Comparativa Fija vs Mixta":
         st.write(f"**Intereses totales fija:** {intereses_fija:,.2f} €")
         st.write(f"**Intereses totales mixta:** {intereses_mixta:,.2f} €")
 
-        # Gráfico de intereses acumulados
         st.write("### Intereses acumulados por año")
-        fig, ax = plt.subplots(figsize=(10,5))
-        ax.plot(df_fija["Año"], df_fija["Intereses pagados"].cumsum(), label="Fija")
-        ax.plot(df_mixta["Año"], df_mixta["Intereses pagados"].cumsum(), label="Mixta")
-        ax.set_xlabel("Año")
-        ax.set_ylabel("Intereses acumulados (€)")
-        ax.legend()
-        st.pyplot(fig)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df_fija["Año"], y=df_fija["Intereses pagados"].cumsum(),
+            mode="lines+markers", name="Fija"
+        ))
+        fig.add_trace(go.Scatter(
+            x=df_mixta["Año"], y=df_mixta["Intereses pagados"].cumsum(),
+            mode="lines+markers", name="Mixta"
+        ))
+        fig.update_layout(
+            title="Intereses acumulados por año",
+            xaxis_title="Año",
+            yaxis_title="Intereses acumulados (€)",
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
 # =============================
 # 4. PÁGINA AMORTIZACIÓN ANTICIPADA
@@ -324,14 +332,13 @@ elif pagina == "Amortización Anticipada":
         pendiente = principal
         intereses_sin_amort = 0
 
-        capital_pendiente_por_año = []
         for i in range(n):
             interes = pendiente * r
             amort = cuota - interes
             intereses_sin_amort += interes
             pendiente -= amort
             if (i+1) % 12 == 0:
-                capital_pendiente_por_año.append(pendiente)
+                pass
         intereses_totales_sin_amort = intereses_sin_amort
 
         pendiente = principal
@@ -381,10 +388,18 @@ elif pagina == "Amortización Anticipada":
         st.write(f"**Intereses totales CON amortización:** {intereses_totales_con_amort:,.2f} €")
         st.write(f"### **¡Ahorro en intereses! → {ahorro:,.2f} €**")
 
-        fig, ax = plt.subplots()
-        ax.bar(["Sin amortizar", "Con amortización"], [intereses_totales_sin_amort, intereses_totales_con_amort], color=["red", "green"])
-        ax.set_ylabel("Intereses totales (€)")
-        st.pyplot(fig)
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=["Sin amortizar", "Con amortización"],
+            y=[intereses_totales_sin_amort, intereses_totales_con_amort],
+            marker_color=["red", "green"]
+        ))
+        fig.update_layout(
+            yaxis_title="Intereses totales (€)",
+            title="Comparativa de intereses totales",
+            hovermode="x"
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
 # =============================
 # 5. PÁGINA COMPARADOR DE OFERTAS
@@ -451,12 +466,19 @@ elif pagina == "Comparador de Ofertas":
             "Intereses totales": "{:,.2f} €"
         }), use_container_width=True)
 
-        fig, ax = plt.subplots()
-        ax.bar(df.index.astype(str), df["Intereses totales"], color="skyblue")
-        ax.set_xlabel("Oferta")
-        ax.set_ylabel("Intereses totales (€)")
-        ax.set_title("Comparativa de Intereses Totales")
-        st.pyplot(fig)
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=[f"Oferta {i+1}" for i in range(len(df))],
+            y=df["Intereses totales"],
+            marker_color="skyblue"
+        ))
+        fig.update_layout(
+            xaxis_title="Oferta",
+            yaxis_title="Intereses totales (€)",
+            title="Comparativa de Intereses Totales",
+            hovermode="x"
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
 # =============================
 # 6. PÁGINA BONIFICACIONES
@@ -544,14 +566,19 @@ elif pagina == "Bonificaciones":
         }), use_container_width=True)
 
         st.write("### Gráfico de ahorro neto anual")
-        fig, ax = plt.subplots()
-        ax.plot(df["Año"], df["Ahorro neto anual"], label="Ahorro neto anual", color="green", marker='o')
-        ax.axhline(0, color="gray", linestyle="--")
-        ax.set_xlabel("Año")
-        ax.set_ylabel("Ahorro neto anual (€)")
-        ax.set_title("¿En qué año deja de compensar la bonificación?")
-        ax.legend()
-        st.pyplot(fig)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df["Año"], y=df["Ahorro neto anual"],
+            mode="lines+markers", name="Ahorro neto anual", line=dict(color="green")
+        ))
+        fig.add_hline(y=0, line_dash="dash", line_color="gray")
+        fig.update_layout(
+            title="¿En qué año deja de compensar la bonificación?",
+            xaxis_title="Año",
+            yaxis_title="Ahorro neto anual (€)",
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
 # =============================
 # 7. PÁGINA SUBROGACIÓN
@@ -632,20 +659,32 @@ elif pagina == "Subrogación":
         st.write(f"- Total a pagar (capital + intereses + gastos): {total_nuevo:,.2f} €")
         st.write(f"### **Ahorro total con la subrogación: {ahorro_total:,.2f} €**")
 
-        # Gráfico comparativo
-        st.write("### Comparativa de pagos futuros")
-        labels = ["No subrogas", "Subrogas"]
-        totales = [total_restante, total_nuevo]
-        intereses = [intereses_restantes, intereses_nuevos]
-        gastos = [0, gastos_subrogacion]
-
-        fig, ax = plt.subplots()
-        ax.bar(labels, totales, color=["red", "green"], alpha=0.7, label="Total")
-        ax.bar(labels, intereses, color=["orange", "blue"], alpha=0.4, label="Intereses")
-        ax.bar(labels, gastos, color=["gray", "gray"], alpha=0.3, label="Gastos subrogación")
-        ax.set_ylabel("Total a pagar (€)")
-        ax.set_title("¿Compensa subrogar?")
-        st.pyplot(fig)
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=["No subrogas", "Subrogas"],
+            y=[total_restante, total_nuevo],
+            marker_color=["red", "green"],
+            name="Total a pagar"
+        ))
+        fig.add_trace(go.Bar(
+            x=["No subrogas", "Subrogas"],
+            y=[intereses_restantes, intereses_nuevos],
+            marker_color=["orange", "blue"],
+            name="Intereses"
+        ))
+        fig.add_trace(go.Bar(
+            x=["No subrogas", "Subrogas"],
+            y=[0, gastos_subrogacion],
+            marker_color="gray",
+            name="Gastos subrogación"
+        ))
+        fig.update_layout(
+            barmode="overlay",
+            yaxis_title="Total a pagar (€)",
+            title="¿Compensa subrogar?",
+            hovermode="x"
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
 # =============================
 # 8. PÁGINA GLOSARIO MEJORADO
