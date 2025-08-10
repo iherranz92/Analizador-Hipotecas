@@ -1,17 +1,25 @@
+# =============================
+# IMPORTS Y CONFIGURACIÓN INICIAL
+# =============================
 import streamlit as st
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Calculadora de Hipotecas", layout="centered")
 
-# Sidebar para navegación
+# =============================
+# SIDEBAR DE NAVEGACIÓN
+# =============================
 st.sidebar.title("Menú")
 pagina = st.sidebar.radio(
     "Ir a:",
     ("Hipoteca Fija", "Hipoteca Mixta", "Comparativa Fija vs Mixta")
 )
 
-# Página 1: Hipoteca Fija
+# =============================
+# 1. PÁGINA HIPOTECA FIJA
+# =============================
 if pagina == "Hipoteca Fija":
     st.title("Calculadora de Hipoteca Fija")
     years = st.number_input("Años de la hipoteca:", min_value=1, max_value=40, value=20)
@@ -31,7 +39,40 @@ if pagina == "Hipoteca Fija":
         st.write(f"**Cuota mensual:** {cuota:,.2f} €")
         st.write(f"**Intereses totales:** {intereses_totales:,.2f} €")
 
-# Página 2: Hipoteca Mixta
+        # -------- CUADRO DE AMORTIZACIÓN FIJA --------
+        cuadro = []
+        pendiente = principal
+        for year in range(1, years + 1):
+            intereses_anual = 0
+            capital_anual = 0
+            for mes in range(12):
+                interes_mes = pendiente * r
+                capital_mes = cuota - interes_mes
+                intereses_anual += interes_mes
+                capital_anual += capital_mes
+                pendiente -= capital_mes
+                if pendiente < 0:
+                    pendiente = 0
+            cuadro.append({
+                "Año": year,
+                "Cuota total pagada": cuota * 12,
+                "Intereses pagados": intereses_anual,
+                "Capital amortizado": capital_anual,
+                "Capital pendiente": max(pendiente, 0)
+            })
+
+        df_cuadro = pd.DataFrame(cuadro)
+        st.write("### Cuadro de amortización (anual)")
+        st.dataframe(df_cuadro.style.format({
+            "Cuota total pagada": "{:,.2f} €",
+            "Intereses pagados": "{:,.2f} €",
+            "Capital amortizado": "{:,.2f} €",
+            "Capital pendiente": "{:,.2f} €"
+        }))
+
+# =============================
+# 2. PÁGINA HIPOTECA MIXTA
+# =============================
 elif pagina == "Hipoteca Mixta":
     st.title("Calculadora de Hipoteca Mixta")
     years_fixed = st.number_input("Años a tipo fijo:", min_value=1, max_value=40, value=10)
@@ -47,7 +88,7 @@ elif pagina == "Hipoteca Mixta":
         r_fijo = (tipo_fijo / 100) / 12
         r_var = ((euribor + diferencial) / 100) / 12
 
-        # Cuota durante años fijos (se calcula como si toda la hipoteca fuera a ese plazo)
+        # Cuota durante años fijos (como si toda la hipoteca fuera a ese plazo)
         cuota_fija = principal * (r_fijo * (1 + r_fijo) ** (n_fijo + n_var)) / ((1 + r_fijo) ** (n_fijo + n_var) - 1)
         pendiente = principal
         intereses_mixta = 0
@@ -76,7 +117,45 @@ elif pagina == "Hipoteca Mixta":
         st.write(f"**Cuota mensual (variable):** {cuota_variable:,.2f} €")
         st.write(f"**Intereses totales:** {intereses_mixta:,.2f} €")
 
-# Página 3: Comparativa Fija vs Mixta
+        # -------- CUADRO DE AMORTIZACIÓN MIXTA --------
+        cuadro = []
+        pendiente = principal
+        for year in range(1, years_total + 1):
+            intereses_anual = 0
+            capital_anual = 0
+            for mes in range(12):
+                if year <= years_fixed:
+                    interes_mes = pendiente * r_fijo
+                    cuota_mes = cuota_fija
+                else:
+                    interes_mes = pendiente * r_var
+                    cuota_mes = cuota_variable
+                capital_mes = cuota_mes - interes_mes
+                intereses_anual += interes_mes
+                capital_anual += capital_mes
+                pendiente -= capital_mes
+                if pendiente < 0:
+                    pendiente = 0
+            cuadro.append({
+                "Año": year,
+                "Cuota total pagada": cuota_mes * 12,
+                "Intereses pagados": intereses_anual,
+                "Capital amortizado": capital_anual,
+                "Capital pendiente": max(pendiente, 0)
+            })
+
+        df_cuadro = pd.DataFrame(cuadro)
+        st.write("### Cuadro de amortización (anual)")
+        st.dataframe(df_cuadro.style.format({
+            "Cuota total pagada": "{:,.2f} €",
+            "Intereses pagados": "{:,.2f} €",
+            "Capital amortizado": "{:,.2f} €",
+            "Capital pendiente": "{:,.2f} €"
+        }))
+
+# =============================
+# 3. PÁGINA COMPARATIVA FIJA VS MIXTA
+# =============================
 else:
     st.title("Comparativa Hipoteca Fija vs Mixta")
     st.write("Introduce los parámetros para comparar ambas opciones:")
