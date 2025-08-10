@@ -13,6 +13,7 @@ st.set_page_config(page_title="Calculadora de Hipotecas", layout="centered")
 # SIDEBAR DE NAVEGACIÓN
 # =============================
 st.sidebar.title("Menú")
+
 pagina = st.sidebar.radio(
     "Ir a:",
     (
@@ -21,7 +22,9 @@ pagina = st.sidebar.radio(
         "Comparativa Fija vs Mixta",
         "Amortización Anticipada",
         "Comparador de Ofertas",
+        "Bonificaciones",
         "Glosario"
+        
     )
 )
 
@@ -414,7 +417,109 @@ elif pagina == "Comparador de Ofertas":
         st.pyplot(fig)
 
 # =============================
-# 6. PÁGINA GLOSARIO
+# 6. PÁGINA BONIFICACIONES
+# =============================
+elif pagina == "Bonificaciones":
+    st.title("¿Compensa aceptar bonificaciones en tu hipoteca fija?")
+
+    # Parámetros de la hipoteca
+    years = st.number_input("Años de la hipoteca:", min_value=1, max_value=40, value=20, key="boni_years")
+    interest = st.number_input("Tipo de interés SIN bonificaciones (%):", min_value=0.0, max_value=20.0, value=3.0, step=0.1, key="boni_interest")
+    principal = st.number_input("Importe total (€):", min_value=1000.0, max_value=1000000.0, value=150000.0, step=1000.0, key="boni_principal")
+
+    # Selección de bonificaciones
+    opciones = ["Seguro de vida", "Seguro de hogar", "Seguro de vivienda", "Nómina", "Gastos anuales", "Fondo", "Otro"]
+    bonis = st.multiselect("Selecciona las bonificaciones que quieres analizar:", opciones)
+
+    bonificaciones = []
+    for b in bonis:
+        st.subheader(f"{b}")
+        if b == "Otro":
+            nombre = st.text_input("Nombre de la bonificación", key=f"boni_nombre_{b}")
+        else:
+            nombre = b
+        sobrecoste = st.number_input(f"Sobrecoste anual de {nombre} (€):", min_value=0.0, value=0.0, step=50.0, key=f"boni_sc_{b}")
+        bonifica = st.number_input(f"Bonificación en el tipo de interés de {nombre} (%):", min_value=0.0, max_value=2.0, value=0.1, step=0.01, key=f"boni_b_{b}")
+        bonificaciones.append({
+            "nombre": nombre,
+            "sobrecoste": sobrecoste,
+            "bonifica": bonifica
+        })
+
+    if st.button("Calcular si compensa"):
+        # Hipoteca SIN bonificaciones
+        n = int(years * 12)
+        r_sin = (interest / 100) / 12
+        cuota_sin = principal * (r_sin * (1 + r_sin) ** n) / ((1 + r_sin) ** n - 1)
+        pendiente_sin = principal
+
+        intereses_anuales_sin = []
+        for year in range(1, years + 1):
+            intereses_anual = 0
+            for mes in range(12):
+                interes_mes = pendiente_sin * r_sin
+                capital_mes = cuota_sin - interes_mes
+                intereses_anual += interes_mes
+                pendiente_sin -= capital_mes
+                if pendiente_sin < 0:
+                    pendiente_sin = 0
+            intereses_anuales_sin.append(intereses_anual)
+
+        # Hipoteca CON bonificaciones
+        total_bonificacion = sum(b["bonifica"] for b in bonificaciones)
+        total_sobrecoste_anual = sum(b["sobrecoste"] for b in bonificaciones)
+        r_con = ((interest - total_bonificacion) / 100) / 12
+        cuota_con = principal * (r_con * (1 + r_con) ** n) / ((1 + r_con) ** n - 1)
+        pendiente_con = principal
+
+        intereses_anuales_con = []
+        for year in range(1, years + 1):
+            intereses_anual = 0
+            for mes in range(12):
+                interes_mes = pendiente_con * r_con
+                capital_mes = cuota_con - interes_mes
+                intereses_anual += interes_mes
+                pendiente_con -= capital_mes
+                if pendiente_con < 0:
+                    pendiente_con = 0
+            intereses_anuales_con.append(intereses_anual)
+
+        # Cálculo del ahorro neto anual
+        intereses_ahorrados_anual = np.array(intereses_anuales_sin) - np.array(intereses_anuales_con)
+        ahorro_neto_anual = intereses_ahorrados_anual - total_sobrecoste_anual
+
+        df = pd.DataFrame({
+            "Año": np.arange(1, years+1),
+            "Intereses ahorrados ese año": intereses_ahorrados_anual,
+            "Sobrecoste anual": [total_sobrecoste_anual]*years,
+            "Ahorro neto anual": ahorro_neto_anual
+        })
+
+        st.write(f"**Intereses totales SIN bonificaciones:** {sum(intereses_anuales_sin):,.2f} €")
+        st.write(f"**Intereses totales CON bonificaciones:** {sum(intereses_anuales_con):,.2f} €")
+        st.write(f"**Sobrecoste anual total por bonificaciones:** {total_sobrecoste_anual:,.2f} €")
+
+        st.write("### Evolución del ahorro neto anual")
+        st.dataframe(df.style.format({
+            "Intereses ahorrados ese año": "{:,.2f} €",
+            "Sobrecoste anual": "{:,.2f} €",
+            "Ahorro neto anual": "{:,.2f} €"
+        }), use_container_width=True)
+
+        st.write("### Gráfico de ahorro neto anual")
+        fig, ax = plt.subplots()
+        ax.plot(df["Año"], df["Ahorro neto anual"], label="Ahorro neto anual", color="green", marker='o')
+        ax.axhline(0, color="gray", linestyle="--")
+        ax.set_xlabel("Año")
+        ax.set_ylabel("Ahorro neto anual (€)")
+        ax.set_title("¿En qué año deja de compensar la bonificación?")
+        ax.legend()
+        st.pyplot(fig)
+
+
+
+# =============================
+# 7. PÁGINA GLOSARIO
 # =============================
 elif pagina == "Glosario":
     st.title("Glosario Hipotecario")
