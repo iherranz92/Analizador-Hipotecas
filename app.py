@@ -13,18 +13,18 @@ st.set_page_config(page_title="Calculadora de Hipotecas", layout="centered")
 # SIDEBAR DE NAVEGACIÓN
 # =============================
 st.sidebar.title("Menú")
-
 pagina = st.sidebar.radio(
     "Ir a:",
     (
+        "Inicio",
         "Hipoteca Fija",
         "Hipoteca Mixta",
         "Comparativa Fija vs Mixta",
         "Amortización Anticipada",
         "Comparador de Ofertas",
         "Bonificaciones",
+        "Subrogación",
         "Glosario"
-        
     )
 )
 
@@ -98,9 +98,51 @@ def plot_evolucion(df, titulo):
     st.pyplot(fig)
 
 # =============================
+# 0. PÁGINA INICIO
+# =============================
+if pagina == "Inicio":
+    st.title("Bienvenido a la Calculadora y Analizador de Hipotecas 🏡")
+    st.markdown("""
+    Esta herramienta te permite analizar y comparar diferentes tipos de hipotecas, simular escenarios y tomar decisiones informadas.
+
+    ### ¿Qué puedes hacer aquí?
+    """)
+
+    st.markdown("""
+    - **Hipoteca Fija**  
+      Calcula cuota, intereses y cuadro de amortización para hipotecas a tipo fijo.
+
+    - **Hipoteca Mixta**  
+      Simula hipotecas con años fijos y años variables.
+
+    - **Comparativa Fija vs Mixta**  
+      Compara ambos tipos con gráficos y cuadro de intereses.
+
+    - **Amortización Anticipada**  
+      Descubre cuánto puedes ahorrar amortizando antes de tiempo.
+
+    - **Comparador de Ofertas**  
+      Introduce varias ofertas de bancos y compara cuotas e intereses totales.
+
+    - **Bonificaciones**  
+      Analiza si compensa contratar productos vinculados para rebajar el tipo de interés.
+
+    - **Subrogación**  
+      Comprueba si te conviene cambiar tu hipoteca a otro banco.
+
+    - **Glosario**  
+      Consulta los conceptos clave del mundo hipotecario y consejos útiles.
+    """)
+
+    st.info("Navega por las secciones desde el menú lateral izquierdo. ¡Empieza a analizar tu hipoteca ahora!")
+
+    # (Opcional) Imagen o logo
+    # st.image("https://cdn.pixabay.com/photo/2016/11/29/06/15/architecture-1867187_1280.jpg", caption="Tu futuro, tu casa", use_column_width=True)
+
+# =============================
 # 1. PÁGINA HIPOTECA FIJA
 # =============================
-if pagina == "Hipoteca Fija":
+elif pagina == "Hipoteca Fija":
     st.title("Calculadora de Hipoteca Fija")
     years = st.number_input("Años de la hipoteca:", min_value=1, max_value=40, value=20)
     interest = st.number_input("Tipo de interés anual (%):", min_value=0.0, max_value=20.0, value=3.0, step=0.1)
@@ -422,12 +464,10 @@ elif pagina == "Comparador de Ofertas":
 elif pagina == "Bonificaciones":
     st.title("¿Compensa aceptar bonificaciones en tu hipoteca fija?")
 
-    # Parámetros de la hipoteca
     years = st.number_input("Años de la hipoteca:", min_value=1, max_value=40, value=20, key="boni_years")
     interest = st.number_input("Tipo de interés SIN bonificaciones (%):", min_value=0.0, max_value=20.0, value=3.0, step=0.1, key="boni_interest")
     principal = st.number_input("Importe total (€):", min_value=1000.0, max_value=1000000.0, value=150000.0, step=1000.0, key="boni_principal")
 
-    # Selección de bonificaciones
     opciones = ["Seguro de vida", "Seguro de hogar", "Seguro de vivienda", "Nómina", "Gastos anuales", "Fondo", "Otro"]
     bonis = st.multiselect("Selecciona las bonificaciones que quieres analizar:", opciones)
 
@@ -447,7 +487,6 @@ elif pagina == "Bonificaciones":
         })
 
     if st.button("Calcular si compensa"):
-        # Hipoteca SIN bonificaciones
         n = int(years * 12)
         r_sin = (interest / 100) / 12
         cuota_sin = principal * (r_sin * (1 + r_sin) ** n) / ((1 + r_sin) ** n - 1)
@@ -465,7 +504,6 @@ elif pagina == "Bonificaciones":
                     pendiente_sin = 0
             intereses_anuales_sin.append(intereses_anual)
 
-        # Hipoteca CON bonificaciones
         total_bonificacion = sum(b["bonifica"] for b in bonificaciones)
         total_sobrecoste_anual = sum(b["sobrecoste"] for b in bonificaciones)
         r_con = ((interest - total_bonificacion) / 100) / 12
@@ -484,7 +522,6 @@ elif pagina == "Bonificaciones":
                     pendiente_con = 0
             intereses_anuales_con.append(intereses_anual)
 
-        # Cálculo del ahorro neto anual
         intereses_ahorrados_anual = np.array(intereses_anuales_sin) - np.array(intereses_anuales_con)
         ahorro_neto_anual = intereses_ahorrados_anual - total_sobrecoste_anual
 
@@ -516,22 +553,175 @@ elif pagina == "Bonificaciones":
         ax.legend()
         st.pyplot(fig)
 
+# =============================
+# 7. PÁGINA SUBROGACIÓN
+# =============================
+elif pagina == "Subrogación":
+    st.title("¿Compensa subrogar tu hipoteca fija?")
 
+    st.markdown("""
+    Compara el coste y el ahorro de cambiar tu hipoteca fija a otra entidad, teniendo en cuenta los gastos de subrogación.
+    """)
+
+    # Datos de la hipoteca actual
+    st.header("Tu hipoteca actual")
+    importe_inicial = st.number_input("Importe inicial de la hipoteca (€):", min_value=1000.0, max_value=1000000.0, value=150000.0, step=1000.0)
+    años_totales = st.number_input("Años totales de la hipoteca:", min_value=1, max_value=40, value=20)
+    tipo_actual = st.number_input("Tipo de interés actual (%):", min_value=0.0, max_value=20.0, value=3.0, step=0.1)
+    año_actual = st.number_input("Año en el que estás:", min_value=1, max_value=años_totales, value=7)
+
+    n_total = int(años_totales * 12)
+    n_pasados = int((año_actual - 1) * 12)
+    r_actual = (tipo_actual / 100) / 12
+    cuota_actual = importe_inicial * (r_actual * (1 + r_actual) ** n_total) / ((1 + r_actual) ** n_total - 1) if r_actual > 0 else importe_inicial / n_total
+    pendiente = importe_inicial
+    for _ in range(n_pasados):
+        interes_mes = pendiente * r_actual
+        capital_mes = cuota_actual - interes_mes
+        pendiente -= capital_mes
+        if pendiente < 0:
+            pendiente = 0
+
+    st.write(f"**Capital pendiente estimado:** {pendiente:,.2f} €")
+
+    # Datos de la hipoteca alternativa
+    st.header("Hipoteca alternativa (tras subrogación)")
+    tipo_nuevo = st.number_input("Tipo de interés alternativo (%):", min_value=0.0, max_value=20.0, value=2.0, step=0.1)
+    años_restantes = st.number_input("Plazo restante (años):", min_value=1, max_value=40, value=años_totales - año_actual + 1)
+    gastos_subrogacion = st.number_input("Coste de subrogación (€):", min_value=0.0, max_value=20000.0, value=1500.0, step=100.0)
+
+    if st.button("Comparar escenarios"):
+        n_restantes = int(años_restantes * 12)
+        # Escenario 1: No subrogas
+        cuota_restante = cuota_actual
+        intereses_restantes = 0
+        cap_pend = pendiente
+        for _ in range(n_restantes):
+            interes_mes = cap_pend * r_actual
+            capital_mes = cuota_restante - interes_mes
+            intereses_restantes += interes_mes
+            cap_pend -= capital_mes
+            if cap_pend < 0:
+                cap_pend = 0
+        total_restante = intereses_restantes + pendiente
+
+        # Escenario 2: Subrogas
+        r_nuevo = (tipo_nuevo / 100) / 12
+        cuota_nueva = pendiente * (r_nuevo * (1 + r_nuevo) ** n_restantes) / ((1 + r_nuevo) ** n_restantes - 1) if r_nuevo > 0 else pendiente / n_restantes
+        intereses_nuevos = 0
+        cap_pend = pendiente
+        for _ in range(n_restantes):
+            interes_mes = cap_pend * r_nuevo
+            capital_mes = cuota_nueva - interes_mes
+            intereses_nuevos += interes_mes
+            cap_pend -= capital_mes
+            if cap_pend < 0:
+                cap_pend = 0
+        total_nuevo = intereses_nuevos + pendiente + gastos_subrogacion
+
+        ahorro_total = total_restante - total_nuevo
+
+        st.write(f"**Escenario 1: No subrogas**")
+        st.write(f"- Cuota mensual: {cuota_restante:,.2f} €")
+        st.write(f"- Intereses por pagar: {intereses_restantes:,.2f} €")
+        st.write(f"- Total a pagar (incluyendo capital): {total_restante:,.2f} €")
+
+        st.write(f"**Escenario 2: Subrogas**")
+        st.write(f"- Nueva cuota mensual: {cuota_nueva:,.2f} €")
+        st.write(f"- Intereses por pagar: {intereses_nuevos:,.2f} €")
+        st.write(f"- Total a pagar (capital + intereses + gastos): {total_nuevo:,.2f} €")
+        st.write(f"### **Ahorro total con la subrogación: {ahorro_total:,.2f} €**")
+
+        # Gráfico comparativo
+        st.write("### Comparativa de pagos futuros")
+        labels = ["No subrogas", "Subrogas"]
+        totales = [total_restante, total_nuevo]
+        intereses = [intereses_restantes, intereses_nuevos]
+        gastos = [0, gastos_subrogacion]
+
+        fig, ax = plt.subplots()
+        ax.bar(labels, totales, color=["red", "green"], alpha=0.7, label="Total")
+        ax.bar(labels, intereses, color=["orange", "blue"], alpha=0.4, label="Intereses")
+        ax.bar(labels, gastos, color=["gray", "gray"], alpha=0.3, label="Gastos subrogación")
+        ax.set_ylabel("Total a pagar (€)")
+        ax.set_title("¿Compensa subrogar?")
+        st.pyplot(fig)
 
 # =============================
-# 7. PÁGINA GLOSARIO
+# 8. PÁGINA GLOSARIO MEJORADO
 # =============================
 elif pagina == "Glosario":
-    st.title("Glosario Hipotecario")
-    st.write("""
-    - **TIN (Tipo de Interés Nominal):** Es el porcentaje que se aplica al capital pendiente de la hipoteca para calcular los intereses.
-    - **TAE (Tasa Anual Equivalente):** Incluye el TIN y otros gastos, reflejando el coste real anual de la hipoteca.
-    - **Euribor:** Índice de referencia que indica a qué tipo de interés se prestan dinero los bancos europeos.
-    - **Diferencial:** Porcentaje que se suma al Euribor para calcular el interés de una hipoteca variable o mixta.
-    - **Amortización:** Pago parcial o total del capital pendiente de la hipoteca.
-    - **Cuota:** Cantidad que pagas cada mes, compuesta de intereses y amortización de capital.
-    - **Capital pendiente:** Importe que queda por devolver al banco en cada momento.
-    - **Hipoteca fija:** El tipo de interés es el mismo durante toda la vida del préstamo.
-    - **Hipoteca mixta:** Tiene una parte a tipo fijo y otra a tipo variable (referenciada al Euribor).
-    - **Amortización anticipada:** Pago adicional para reducir capital, plazo o cuota antes de tiempo.
+    st.title("Glosario Hipotecario y Consejos Útiles")
+
+    st.markdown("""
+    ### Términos básicos
+
+    **TIN (Tipo de Interés Nominal):**  
+    Porcentaje que el banco aplica al dinero que te presta. Solo tiene en cuenta los intereses, no comisiones ni otros gastos.
+
+    **TAE (Tasa Anual Equivalente):**  
+    Refleja el coste real de la hipoteca porque incluye el TIN, comisiones, gastos y la frecuencia de los pagos. Útil para comparar ofertas.
+
+    **Euríbor:**  
+    Índice de referencia para la mayoría de hipotecas variables y mixtas en España. Es el tipo de interés al que los bancos europeos se prestan dinero entre sí.
+
+    **Diferencial:**  
+    Porcentaje fijo que se suma al Euríbor para calcular el tipo de interés de tu hipoteca variable o mixta. Ejemplo: si el Euríbor está en 2% y tu diferencial es 1%, pagarás un 3%.
+
+    **Cuota:**  
+    Pago mensual que haces al banco. Incluye parte de intereses y parte de devolución del capital.
+
+    **Capital pendiente:**  
+    Dinero que aún debes devolver al banco en cada momento de la vida de la hipoteca.
+
+    **Amortización:**  
+    Proceso de devolver el dinero prestado. Cada cuota amortiza (reduce) una parte del capital y paga intereses.
+
+    **Amortización anticipada:**  
+    Pago extra que haces para reducir el capital pendiente antes de tiempo. Puede servir para reducir la cuota mensual o el plazo de la hipoteca.
+
+    **Bonificación:**  
+    Descuento en el tipo de interés que te ofrece el banco si contratas productos adicionales (seguros, nómina, fondos, etc). Ojo: a veces, el coste de estos productos supera el ahorro en intereses.
+
+    **Hipoteca fija:**  
+    El tipo de interés no cambia durante toda la vida del préstamo. La cuota mensual es siempre la misma.
+
+    **Hipoteca variable:**  
+    El tipo de interés puede cambiar periódicamente (normalmente cada 6 o 12 meses), en función del Euríbor y el diferencial.
+
+    **Hipoteca mixta:**  
+    Combina un periodo inicial a tipo fijo (por ejemplo, 10 años) y el resto a tipo variable (Euríbor + diferencial).
+
+    **Subrogación:**  
+    Cambiar tu hipoteca de un banco a otro para mejorar condiciones (tipo de interés, plazo, etc). Suele tener un coste, pero puede ahorrar mucho dinero si las condiciones son mejores.
+
+    **Comisión de apertura:**  
+    Cantidad que cobra el banco al formalizar la hipoteca.
+
+    **Comisión de amortización anticipada:**  
+    Penalización (porcentaje) que cobra el banco si devuelves parte o toda la hipoteca antes de tiempo.
+
+    **Vinculación:**  
+    Productos adicionales que el banco te exige contratar para darte mejores condiciones en la hipoteca (seguros, nómina, tarjetas...).
+
+    **Gastos de subrogación:**  
+    Costes administrativos, notariales, de tasación, etc. al cambiar la hipoteca de banco.
+
+    **Fondo de inversión:**  
+    Producto financiero donde puedes invertir dinero, a veces exigido como condición de bonificación.
+
+    ---
+
+    ### Consejos útiles
+
+    - **Compara siempre la TAE, no solo el TIN.**
+    - **Lee la letra pequeña de las bonificaciones:** calcula si realmente te sale a cuenta.
+    - **Pregunta por las comisiones de amortización anticipada y subrogación.**
+    - **Simula diferentes escenarios:** ¿qué pasa si subes el Euríbor? ¿y si amortizas anticipadamente?
+    - **No te fijes solo en la cuota:** valora el coste total de los intereses a lo largo de la vida de la hipoteca.
+    - **Pregunta por la vinculación:** a veces, el banco exige domiciliar la nómina, contratar seguros, tarjetas, etc.
+    - **Ten en cuenta tus planes de vida:** si vas a vender la casa antes de acabar la hipoteca, una fija puede no compensar.
+    - **Consulta siempre con un asesor independiente si tienes dudas.**
     """)
+
+    st.info("¿Tienes dudas? Busca términos en este glosario o consulta con un asesor independiente antes de firmar.")
