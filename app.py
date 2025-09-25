@@ -8,6 +8,7 @@ import plotly
 import plotly.graph_objects as go
 from io import BytesIO
 
+
 st.set_page_config(page_title="Calculadora de Hipotecas", layout="centered")
 
 # =============================
@@ -34,36 +35,38 @@ pagina = st.sidebar.radio(
 # =============================
 # FUNCIONES AUXILIARES
 # =============================
+@st.cache_data(show_spinner=False)
 def cuadro_amortizacion_fija(principal, years, r, cuota):
     cuadro = []
     pendiente = principal
     for year in range(1, years + 1):
-        intereses_anual = 0
-        capital_anual = 0
-        for mes in range(12):
+        intereses_anual = 0.0
+        capital_anual = 0.0
+        for _ in range(12):
             interes_mes = pendiente * r
             capital_mes = cuota - interes_mes
             intereses_anual += interes_mes
             capital_anual += capital_mes
             pendiente -= capital_mes
             if pendiente < 0:
-                pendiente = 0
+                pendiente = 0.0
         cuadro.append({
             "Año": year,
             "Cuota total pagada": cuota * 12,
             "Intereses pagados": intereses_anual,
             "Capital amortizado": capital_anual,
-            "Capital pendiente": max(pendiente, 0)
+            "Capital pendiente": max(pendiente, 0.0)
         })
     return pd.DataFrame(cuadro)
 
+@st.cache_data(show_spinner=False)
 def cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var, cuota_fija, cuota_variable):
     cuadro = []
     pendiente = principal
     for year in range(1, years_total + 1):
-        intereses_anual = 0
-        capital_anual = 0
-        for mes in range(12):
+        intereses_anual = 0.0
+        capital_anual = 0.0
+        for _ in range(12):
             if year <= years_fixed:
                 interes_mes = pendiente * r_fijo
                 cuota_mes = cuota_fija
@@ -75,15 +78,16 @@ def cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var
             capital_anual += capital_mes
             pendiente -= capital_mes
             if pendiente < 0:
-                pendiente = 0
+                pendiente = 0.0
         cuadro.append({
             "Año": year,
             "Cuota total pagada": cuota_mes * 12,
             "Intereses pagados": intereses_anual,
             "Capital amortizado": capital_anual,
-            "Capital pendiente": max(pendiente, 0)
+            "Capital pendiente": max(pendiente, 0.0)
         })
     return pd.DataFrame(cuadro)
+
 
 def descargar_df(df):
     output = BytesIO()
@@ -150,11 +154,12 @@ if pagina == "Inicio":
 # =============================
 # 1. PÁGINA HIPOTECA FIJA
 # =============================
+# =============================
+# 1. PÁGINA HIPOTECA FIJA (mejorada)
+# =============================
 elif pagina == "Hipoteca Fija":
     st.title("Calculadora de Hipoteca Fija")
-
     st.info("Introduce los datos de tu hipoteca fija para calcular la cuota mensual, los intereses totales y ver el cuadro de amortización.")
-
     st.divider()
 
     years = st.number_input(
@@ -162,18 +167,24 @@ elif pagina == "Hipoteca Fija":
         min_value=1, max_value=40, value=20,
         help="Plazo total de devolución del préstamo en años."
     )
-
     interest = st.number_input(
         "Tipo de interés anual (%):",
-        min_value=0.0, max_value=20.0, value=3.0, step=0.1,
+        min_value=-2.0, max_value=20.0, value=3.0, step=0.1,
         help="Porcentaje fijo que aplicará el banco cada año sobre el capital pendiente."
     )
-
     principal = st.number_input(
         "Importe total (€):",
-        min_value=1000.0, max_value=1000000.0, value=150000.0, step=1000.0,
+        min_value=1000.0, max_value=1_000_000.0, value=150000.0, step=1000.0,
         help="Cantidad total que te presta el banco."
     )
+
+    # Validaciones y avisos
+    if interest < 0:
+        st.warning("Tienes un tipo negativo. Revisa que sea lo que quieres simular.")
+    if years > 35:
+        st.info("Plazos muy largos suelen implicar intereses totales elevados.")
+    if principal > 600_000:
+        st.info("Importes muy altos: comprueba límites/reglas de tu entidad.")
 
     st.divider()
 
@@ -181,43 +192,46 @@ elif pagina == "Hipoteca Fija":
         n = int(years * 12)
         r = (interest / 100) / 12
 
-        if r > 0:
-            cuota = principal * (r * (1 + r) ** n) / ((1 + r) ** n - 1)
+        if n <= 0:
+            st.error("Plazo inválido.")
         else:
-            cuota = principal / n
+            cuota = principal / n if r == 0 else principal * (r * (1 + r) ** n) / ((1 + r) ** n - 1)
+            total_pagado = cuota * n
+            intereses_totales = total_pagado - principal
 
-        total_pagado = cuota * n
-        intereses_totales = total_pagado - principal
+            st.success("¡Cálculo realizado con éxito!")
+            # Métricas principales
+            c1, c2 = st.columns(2)
+            c1.metric("Cuota mensual", f"{cuota:,.2f} €")
+            c2.metric("Intereses totales", f"{intereses_totales:,.2f} €")
 
-        st.success("¡Cálculo realizado con éxito!")
+            st.divider()
+            df_cuadro = cuadro_amortizacion_fija(principal, years, r, cuota)
+            st.write("### Cuadro de amortización (anual)")
+            st.dataframe(df_cuadro.style.format({
+                "Cuota total pagada": "{:,.2f} €",
+                "Intereses pagados": "{:,.2f} €",
+                "Capital amortizado": "{:,.2f} €",
+                "Capital pendiente": "{:,.2f} €"
+            }), use_container_width=True)
 
-        st.write(f"**Cuota mensual:** {cuota:,.2f} €")
-        st.write(f"**Intereses totales:** {intereses_totales:,.2f} €")
+            st.download_button(
+                label="Descargar cuadro (Excel)",
+                data=descargar_df(df_cuadro),
+                file_name="cuadro_amortizacion_fija.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
-        st.divider()
+            st.divider()
+            st.write("### Evolución de capital pendiente e intereses")
+            plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Fija")
 
-        df_cuadro = cuadro_amortizacion_fija(principal, years, r, cuota)
-        st.write("### Cuadro de amortización (anual)")
-        st.dataframe(df_cuadro.style.format({
-            "Cuota total pagada": "{:,.2f} €",
-            "Intereses pagados": "{:,.2f} €",
-            "Capital amortizado": "{:,.2f} €",
-            "Capital pendiente": "{:,.2f} €"
-        }), use_container_width=True)
-
-        st.download_button(
-            label="Descargar cuadro (Excel)",
-            data=descargar_df(df_cuadro),
-            file_name="cuadro_amortizacion_fija.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-        st.divider()
-        st.write("### Evolución de capital pendiente e intereses")
-        plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Fija")
 
 # =============================
 # 2. PÁGINA HIPOTECA MIXTA
+# =============================
+# =============================
+# 2. PÁGINA HIPOTECA MIXTA (mejorada)
 # =============================
 elif pagina == "Hipoteca Mixta":
     st.title("Calculadora de Hipoteca Mixta")
@@ -225,35 +239,38 @@ elif pagina == "Hipoteca Mixta":
     st.divider()
 
     years_fixed = st.number_input(
-        "Años a tipo fijo:",
-        min_value=1, max_value=40, value=10,
+        "Años a tipo fijo:", min_value=1, max_value=40, value=10,
         help="Número de años iniciales con interés fijo."
     )
     years_total = st.number_input(
-        "Años totales de la hipoteca:",
-        min_value=years_fixed, max_value=40, value=20,
+        "Años totales de la hipoteca:", min_value=years_fixed, max_value=40, value=20,
         help="Duración total de la hipoteca en años."
     )
     tipo_fijo = st.number_input(
-        "Tipo de interés fijo (%):",
-        min_value=0.0, max_value=20.0, value=2.0, step=0.1,
+        "Tipo de interés fijo (%):", min_value=-2.0, max_value=20.0, value=2.0, step=0.1,
         help="Interés aplicado durante los años fijos."
     )
     euribor = st.number_input(
-        "Euribor estimado para los años variables (%):",
-        min_value=-2.0, max_value=10.0, value=2.0, step=0.1,
+        "Euribor estimado para los años variables (%):", min_value=-3.0, max_value=10.0, value=2.0, step=0.1,
         help="Estimación del Euríbor durante la fase variable."
     )
     diferencial = st.number_input(
-        "Diferencial sobre euribor (%):",
-        min_value=0.0, max_value=5.0, value=1.0, step=0.1,
+        "Diferencial sobre euribor (%):", min_value=0.0, max_value=5.0, value=1.0, step=0.1,
         help="Porcentaje fijo que se suma al Euríbor en la fase variable."
     )
     principal = st.number_input(
-        "Importe total (€):",
-        min_value=1000.0, max_value=1000000.0, value=150000.0, step=1000.0,
+        "Importe total (€):", min_value=1000.0, max_value=1_000_000.0, value=150000.0, step=1000.0,
         help="Cantidad total prestada por el banco."
     )
+
+    # Validaciones y avisos
+    if years_total < years_fixed:
+        st.error("Los años totales no pueden ser menores que los años fijos.")
+    if tipo_fijo < 0:
+        st.warning("Tipo fijo negativo: escenario poco común, revisa el dato.")
+    if euribor + diferencial < 0:
+        st.info("Euríbor + diferencial negativo: podría dar cuotas menores; revisa si tu contrato tiene suelo.")
+
     st.divider()
 
     if st.button("Calcular", key="calcular_mixta"):
@@ -262,52 +279,1428 @@ elif pagina == "Hipoteca Mixta":
         r_fijo = (tipo_fijo / 100) / 12
         r_var = ((euribor + diferencial) / 100) / 12
 
-        cuota_fija = principal * (r_fijo * (1 + r_fijo) ** (n_fijo + n_var)) / ((1 + r_fijo) ** (n_fijo + n_var) - 1)
-        pendiente = principal
-        intereses_mixta = 0
-
-        for _ in range(n_fijo):
-            interes = pendiente * r_fijo
-            amortizacion = cuota_fija - interes
-            pendiente -= amortizacion
-            intereses_mixta += interes
-
-        if r_var > 0:
-            cuota_variable = pendiente * (r_var * (1 + r_var) ** n_var) / ((1 + r_var) ** n_var - 1)
+        if n_fijo + n_var <= 0:
+            st.error("Plazo inválido.")
         else:
-            cuota_variable = pendiente / n_var
+            # Cuota fase fija calculada a plazo completo (método clásico de mixtas comerciales)
+            cuota_fija = principal / (n_fijo + n_var) if r_fijo == 0 else principal * (r_fijo * (1 + r_fijo) ** (n_fijo + n_var)) / ((1 + r_fijo) ** (n_fijo + n_var) - 1)
 
-        for _ in range(n_var):
-            interes = pendiente * r_var
-            amortizacion = cuota_variable - interes
-            pendiente -= amortizacion
-            intereses_mixta += interes
+            pendiente = principal
+            intereses_mixta = 0.0
 
-        st.success("¡Cálculo realizado con éxito!")
-        st.write(f"**Cuota mensual (fijo):** {cuota_fija:,.2f} €")
-        st.write(f"**Cuota mensual (variable):** {cuota_variable:,.2f} €")
-        st.write(f"**Intereses totales:** {intereses_mixta:,.2f} €")
+            # Simula años fijos
+            for _ in range(n_fijo):
+                interes = pendiente * r_fijo
+                amortizacion = cuota_fija - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
 
-        st.divider()
-        df_cuadro = cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var, cuota_fija, cuota_variable)
-        st.write("### Cuadro de amortización (anual)")
-        st.dataframe(df_cuadro.style.format({
-            "Cuota total pagada": "{:,.2f} €",
-            "Intereses pagados": "{:,.2f} €",
-            "Capital amortizado": "{:,.2f} €",
-            "Capital pendiente": "{:,.2f} €"
-        }), use_container_width=True)
+            # Cuota variable con capital remanente
+            if n_var > 0:
+                cuota_variable = pendiente / n_var if r_var == 0 else pendiente * (r_var * (1 + r_var) ** n_var) / ((1 + r_var) ** n_var - 1)
+            else:
+                cuota_variable = 0.0
 
-        st.download_button(
-            label="Descargar cuadro (Excel)",
-            data=descargar_df(df_cuadro),
-            file_name="cuadro_amortizacion_mixta.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            # Simula años variables
+            for _ in range(n_var):
+                interes = pendiente * r_var
+                amortizacion = cuota_variable - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
 
-        st.divider()
-        st.write("### Evolución de capital pendiente e intereses")
-        plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Mixta")
+            st.success("¡Cálculo realizado con éxito!")
+            # Métricas principales
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Cuota fija", f"{cuota_fija:,.2f} €")
+            c2.metric("Cuota variable", f"{cuota_variable:,.2f} €")
+            c3.metric("Intereses totales", f"{intereses_mixta:,.2f} €")
+
+            st.divider()
+            df_cuadro = cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var, cuota_fija, cuota_variable)
+            st.write("### Cuadro de amortización (anual)")
+            st.dataframe(df_cuadro.style.format({
+                "Cuota total pagada": "{:,.2f} €",
+                "Intereses pagados": "{:,.2f} €",
+                "Capital amortizado": "{:,.2f} €",
+                "Capital pendiente": "{:,.2f} €"
+            }), use_container_width=True)
+
+            st.download_button(
+                label="Descargar cuadro (Excel)",
+                data=descargar_df(df_cuadro),
+                file_name="cuadro_amortizacion_mixta.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            st.divider()
+            st.write("### Evolución de capital pendiente e intereses")
+            plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Mixta")
+# =============================
+# 2. PÁGINA HIPOTECA MIXTA (mejorada)
+# =============================
+elif pagina == "Hipoteca Mixta":
+    st.title("Calculadora de Hipoteca Mixta")
+    st.info("Simula una hipoteca con años a tipo fijo y años a tipo variable. Calcula cuotas, intereses y cuadro de amortización.")
+    st.divider()
+
+    years_fixed = st.number_input(
+        "Años a tipo fijo:", min_value=1, max_value=40, value=10,
+        help="Número de años iniciales con interés fijo."
+    )
+    years_total = st.number_input(
+        "Años totales de la hipoteca:", min_value=years_fixed, max_value=40, value=20,
+        help="Duración total de la hipoteca en años."
+    )
+    tipo_fijo = st.number_input(
+        "Tipo de interés fijo (%):", min_value=-2.0, max_value=20.0, value=2.0, step=0.1,
+        help="Interés aplicado durante los años fijos."
+    )
+    euribor = st.number_input(
+        "Euribor estimado para los años variables (%):", min_value=-3.0, max_value=10.0, value=2.0, step=0.1,
+        help="Estimación del Euríbor durante la fase variable."
+    )
+    diferencial = st.number_input(
+        "Diferencial sobre euribor (%):", min_value=0.0, max_value=5.0, value=1.0, step=0.1,
+        help="Porcentaje fijo que se suma al Euríbor en la fase variable."
+    )
+    principal = st.number_input(
+        "Importe total (€):", min_value=1000.0, max_value=1_000_000.0, value=150000.0, step=1000.0,
+        help="Cantidad total prestada por el banco."
+    )
+
+    # Validaciones y avisos
+    if years_total < years_fixed:
+        st.error("Los años totales no pueden ser menores que los años fijos.")
+    if tipo_fijo < 0:
+        st.warning("Tipo fijo negativo: escenario poco común, revisa el dato.")
+    if euribor + diferencial < 0:
+        st.info("Euríbor + diferencial negativo: podría dar cuotas menores; revisa si tu contrato tiene suelo.")
+
+    st.divider()
+
+    if st.button("Calcular", key="calcular_mixta"):
+        n_fijo = int(years_fixed * 12)
+        n_var = int((years_total - years_fixed) * 12)
+        r_fijo = (tipo_fijo / 100) / 12
+        r_var = ((euribor + diferencial) / 100) / 12
+
+        if n_fijo + n_var <= 0:
+            st.error("Plazo inválido.")
+        else:
+            # Cuota fase fija calculada a plazo completo (método clásico de mixtas comerciales)
+            cuota_fija = principal / (n_fijo + n_var) if r_fijo == 0 else principal * (r_fijo * (1 + r_fijo) ** (n_fijo + n_var)) / ((1 + r_fijo) ** (n_fijo + n_var) - 1)
+
+            pendiente = principal
+            intereses_mixta = 0.0
+
+            # Simula años fijos
+            for _ in range(n_fijo):
+                interes = pendiente * r_fijo
+                amortizacion = cuota_fija - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            # Cuota variable con capital remanente
+            if n_var > 0:
+                cuota_variable = pendiente / n_var if r_var == 0 else pendiente * (r_var * (1 + r_var) ** n_var) / ((1 + r_var) ** n_var - 1)
+            else:
+                cuota_variable = 0.0
+
+            # Simula años variables
+            for _ in range(n_var):
+                interes = pendiente * r_var
+                amortizacion = cuota_variable - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            st.success("¡Cálculo realizado con éxito!")
+            # Métricas principales
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Cuota fija", f"{cuota_fija:,.2f} €")
+            c2.metric("Cuota variable", f"{cuota_variable:,.2f} €")
+            c3.metric("Intereses totales", f"{intereses_mixta:,.2f} €")
+
+            st.divider()
+            df_cuadro = cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var, cuota_fija, cuota_variable)
+            st.write("### Cuadro de amortización (anual)")
+            st.dataframe(df_cuadro.style.format({
+                "Cuota total pagada": "{:,.2f} €",
+                "Intereses pagados": "{:,.2f} €",
+                "Capital amortizado": "{:,.2f} €",
+                "Capital pendiente": "{:,.2f} €"
+            }), use_container_width=True)
+
+            st.download_button(
+                label="Descargar cuadro (Excel)",
+                data=descargar_df(df_cuadro),
+                file_name="cuadro_amortizacion_mixta.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            st.divider()
+            st.write("### Evolución de capital pendiente e intereses")
+            plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Mixta")
+# =============================
+# 2. PÁGINA HIPOTECA MIXTA (mejorada)
+# =============================
+elif pagina == "Hipoteca Mixta":
+    st.title("Calculadora de Hipoteca Mixta")
+    st.info("Simula una hipoteca con años a tipo fijo y años a tipo variable. Calcula cuotas, intereses y cuadro de amortización.")
+    st.divider()
+
+    years_fixed = st.number_input(
+        "Años a tipo fijo:", min_value=1, max_value=40, value=10,
+        help="Número de años iniciales con interés fijo."
+    )
+    years_total = st.number_input(
+        "Años totales de la hipoteca:", min_value=years_fixed, max_value=40, value=20,
+        help="Duración total de la hipoteca en años."
+    )
+    tipo_fijo = st.number_input(
+        "Tipo de interés fijo (%):", min_value=-2.0, max_value=20.0, value=2.0, step=0.1,
+        help="Interés aplicado durante los años fijos."
+    )
+    euribor = st.number_input(
+        "Euribor estimado para los años variables (%):", min_value=-3.0, max_value=10.0, value=2.0, step=0.1,
+        help="Estimación del Euríbor durante la fase variable."
+    )
+    diferencial = st.number_input(
+        "Diferencial sobre euribor (%):", min_value=0.0, max_value=5.0, value=1.0, step=0.1,
+        help="Porcentaje fijo que se suma al Euríbor en la fase variable."
+    )
+    principal = st.number_input(
+        "Importe total (€):", min_value=1000.0, max_value=1_000_000.0, value=150000.0, step=1000.0,
+        help="Cantidad total prestada por el banco."
+    )
+
+    # Validaciones y avisos
+    if years_total < years_fixed:
+        st.error("Los años totales no pueden ser menores que los años fijos.")
+    if tipo_fijo < 0:
+        st.warning("Tipo fijo negativo: escenario poco común, revisa el dato.")
+    if euribor + diferencial < 0:
+        st.info("Euríbor + diferencial negativo: podría dar cuotas menores; revisa si tu contrato tiene suelo.")
+
+    st.divider()
+
+    if st.button("Calcular", key="calcular_mixta"):
+        n_fijo = int(years_fixed * 12)
+        n_var = int((years_total - years_fixed) * 12)
+        r_fijo = (tipo_fijo / 100) / 12
+        r_var = ((euribor + diferencial) / 100) / 12
+
+        if n_fijo + n_var <= 0:
+            st.error("Plazo inválido.")
+        else:
+            # Cuota fase fija calculada a plazo completo (método clásico de mixtas comerciales)
+            cuota_fija = principal / (n_fijo + n_var) if r_fijo == 0 else principal * (r_fijo * (1 + r_fijo) ** (n_fijo + n_var)) / ((1 + r_fijo) ** (n_fijo + n_var) - 1)
+
+            pendiente = principal
+            intereses_mixta = 0.0
+
+            # Simula años fijos
+            for _ in range(n_fijo):
+                interes = pendiente * r_fijo
+                amortizacion = cuota_fija - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            # Cuota variable con capital remanente
+            if n_var > 0:
+                cuota_variable = pendiente / n_var if r_var == 0 else pendiente * (r_var * (1 + r_var) ** n_var) / ((1 + r_var) ** n_var - 1)
+            else:
+                cuota_variable = 0.0
+
+            # Simula años variables
+            for _ in range(n_var):
+                interes = pendiente * r_var
+                amortizacion = cuota_variable - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            st.success("¡Cálculo realizado con éxito!")
+            # Métricas principales
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Cuota fija", f"{cuota_fija:,.2f} €")
+            c2.metric("Cuota variable", f"{cuota_variable:,.2f} €")
+            c3.metric("Intereses totales", f"{intereses_mixta:,.2f} €")
+
+            st.divider()
+            df_cuadro = cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var, cuota_fija, cuota_variable)
+            st.write("### Cuadro de amortización (anual)")
+            st.dataframe(df_cuadro.style.format({
+                "Cuota total pagada": "{:,.2f} €",
+                "Intereses pagados": "{:,.2f} €",
+                "Capital amortizado": "{:,.2f} €",
+                "Capital pendiente": "{:,.2f} €"
+            }), use_container_width=True)
+
+            st.download_button(
+                label="Descargar cuadro (Excel)",
+                data=descargar_df(df_cuadro),
+                file_name="cuadro_amortizacion_mixta.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            st.divider()
+            st.write("### Evolución de capital pendiente e intereses")
+            plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Mixta")
+# =============================
+# 2. PÁGINA HIPOTECA MIXTA (mejorada)
+# =============================
+elif pagina == "Hipoteca Mixta":
+    st.title("Calculadora de Hipoteca Mixta")
+    st.info("Simula una hipoteca con años a tipo fijo y años a tipo variable. Calcula cuotas, intereses y cuadro de amortización.")
+    st.divider()
+
+    years_fixed = st.number_input(
+        "Años a tipo fijo:", min_value=1, max_value=40, value=10,
+        help="Número de años iniciales con interés fijo."
+    )
+    years_total = st.number_input(
+        "Años totales de la hipoteca:", min_value=years_fixed, max_value=40, value=20,
+        help="Duración total de la hipoteca en años."
+    )
+    tipo_fijo = st.number_input(
+        "Tipo de interés fijo (%):", min_value=-2.0, max_value=20.0, value=2.0, step=0.1,
+        help="Interés aplicado durante los años fijos."
+    )
+    euribor = st.number_input(
+        "Euribor estimado para los años variables (%):", min_value=-3.0, max_value=10.0, value=2.0, step=0.1,
+        help="Estimación del Euríbor durante la fase variable."
+    )
+    diferencial = st.number_input(
+        "Diferencial sobre euribor (%):", min_value=0.0, max_value=5.0, value=1.0, step=0.1,
+        help="Porcentaje fijo que se suma al Euríbor en la fase variable."
+    )
+    principal = st.number_input(
+        "Importe total (€):", min_value=1000.0, max_value=1_000_000.0, value=150000.0, step=1000.0,
+        help="Cantidad total prestada por el banco."
+    )
+
+    # Validaciones y avisos
+    if years_total < years_fixed:
+        st.error("Los años totales no pueden ser menores que los años fijos.")
+    if tipo_fijo < 0:
+        st.warning("Tipo fijo negativo: escenario poco común, revisa el dato.")
+    if euribor + diferencial < 0:
+        st.info("Euríbor + diferencial negativo: podría dar cuotas menores; revisa si tu contrato tiene suelo.")
+
+    st.divider()
+
+    if st.button("Calcular", key="calcular_mixta"):
+        n_fijo = int(years_fixed * 12)
+        n_var = int((years_total - years_fixed) * 12)
+        r_fijo = (tipo_fijo / 100) / 12
+        r_var = ((euribor + diferencial) / 100) / 12
+
+        if n_fijo + n_var <= 0:
+            st.error("Plazo inválido.")
+        else:
+            # Cuota fase fija calculada a plazo completo (método clásico de mixtas comerciales)
+            cuota_fija = principal / (n_fijo + n_var) if r_fijo == 0 else principal * (r_fijo * (1 + r_fijo) ** (n_fijo + n_var)) / ((1 + r_fijo) ** (n_fijo + n_var) - 1)
+
+            pendiente = principal
+            intereses_mixta = 0.0
+
+            # Simula años fijos
+            for _ in range(n_fijo):
+                interes = pendiente * r_fijo
+                amortizacion = cuota_fija - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            # Cuota variable con capital remanente
+            if n_var > 0:
+                cuota_variable = pendiente / n_var if r_var == 0 else pendiente * (r_var * (1 + r_var) ** n_var) / ((1 + r_var) ** n_var - 1)
+            else:
+                cuota_variable = 0.0
+
+            # Simula años variables
+            for _ in range(n_var):
+                interes = pendiente * r_var
+                amortizacion = cuota_variable - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            st.success("¡Cálculo realizado con éxito!")
+            # Métricas principales
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Cuota fija", f"{cuota_fija:,.2f} €")
+            c2.metric("Cuota variable", f"{cuota_variable:,.2f} €")
+            c3.metric("Intereses totales", f"{intereses_mixta:,.2f} €")
+
+            st.divider()
+            df_cuadro = cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var, cuota_fija, cuota_variable)
+            st.write("### Cuadro de amortización (anual)")
+            st.dataframe(df_cuadro.style.format({
+                "Cuota total pagada": "{:,.2f} €",
+                "Intereses pagados": "{:,.2f} €",
+                "Capital amortizado": "{:,.2f} €",
+                "Capital pendiente": "{:,.2f} €"
+            }), use_container_width=True)
+
+            st.download_button(
+                label="Descargar cuadro (Excel)",
+                data=descargar_df(df_cuadro),
+                file_name="cuadro_amortizacion_mixta.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            st.divider()
+            st.write("### Evolución de capital pendiente e intereses")
+            plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Mixta")
+# =============================
+# 2. PÁGINA HIPOTECA MIXTA (mejorada)
+# =============================
+elif pagina == "Hipoteca Mixta":
+    st.title("Calculadora de Hipoteca Mixta")
+    st.info("Simula una hipoteca con años a tipo fijo y años a tipo variable. Calcula cuotas, intereses y cuadro de amortización.")
+    st.divider()
+
+    years_fixed = st.number_input(
+        "Años a tipo fijo:", min_value=1, max_value=40, value=10,
+        help="Número de años iniciales con interés fijo."
+    )
+    years_total = st.number_input(
+        "Años totales de la hipoteca:", min_value=years_fixed, max_value=40, value=20,
+        help="Duración total de la hipoteca en años."
+    )
+    tipo_fijo = st.number_input(
+        "Tipo de interés fijo (%):", min_value=-2.0, max_value=20.0, value=2.0, step=0.1,
+        help="Interés aplicado durante los años fijos."
+    )
+    euribor = st.number_input(
+        "Euribor estimado para los años variables (%):", min_value=-3.0, max_value=10.0, value=2.0, step=0.1,
+        help="Estimación del Euríbor durante la fase variable."
+    )
+    diferencial = st.number_input(
+        "Diferencial sobre euribor (%):", min_value=0.0, max_value=5.0, value=1.0, step=0.1,
+        help="Porcentaje fijo que se suma al Euríbor en la fase variable."
+    )
+    principal = st.number_input(
+        "Importe total (€):", min_value=1000.0, max_value=1_000_000.0, value=150000.0, step=1000.0,
+        help="Cantidad total prestada por el banco."
+    )
+
+    # Validaciones y avisos
+    if years_total < years_fixed:
+        st.error("Los años totales no pueden ser menores que los años fijos.")
+    if tipo_fijo < 0:
+        st.warning("Tipo fijo negativo: escenario poco común, revisa el dato.")
+    if euribor + diferencial < 0:
+        st.info("Euríbor + diferencial negativo: podría dar cuotas menores; revisa si tu contrato tiene suelo.")
+
+    st.divider()
+
+    if st.button("Calcular", key="calcular_mixta"):
+        n_fijo = int(years_fixed * 12)
+        n_var = int((years_total - years_fixed) * 12)
+        r_fijo = (tipo_fijo / 100) / 12
+        r_var = ((euribor + diferencial) / 100) / 12
+
+        if n_fijo + n_var <= 0:
+            st.error("Plazo inválido.")
+        else:
+            # Cuota fase fija calculada a plazo completo (método clásico de mixtas comerciales)
+            cuota_fija = principal / (n_fijo + n_var) if r_fijo == 0 else principal * (r_fijo * (1 + r_fijo) ** (n_fijo + n_var)) / ((1 + r_fijo) ** (n_fijo + n_var) - 1)
+
+            pendiente = principal
+            intereses_mixta = 0.0
+
+            # Simula años fijos
+            for _ in range(n_fijo):
+                interes = pendiente * r_fijo
+                amortizacion = cuota_fija - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            # Cuota variable con capital remanente
+            if n_var > 0:
+                cuota_variable = pendiente / n_var if r_var == 0 else pendiente * (r_var * (1 + r_var) ** n_var) / ((1 + r_var) ** n_var - 1)
+            else:
+                cuota_variable = 0.0
+
+            # Simula años variables
+            for _ in range(n_var):
+                interes = pendiente * r_var
+                amortizacion = cuota_variable - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            st.success("¡Cálculo realizado con éxito!")
+            # Métricas principales
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Cuota fija", f"{cuota_fija:,.2f} €")
+            c2.metric("Cuota variable", f"{cuota_variable:,.2f} €")
+            c3.metric("Intereses totales", f"{intereses_mixta:,.2f} €")
+
+            st.divider()
+            df_cuadro = cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var, cuota_fija, cuota_variable)
+            st.write("### Cuadro de amortización (anual)")
+            st.dataframe(df_cuadro.style.format({
+                "Cuota total pagada": "{:,.2f} €",
+                "Intereses pagados": "{:,.2f} €",
+                "Capital amortizado": "{:,.2f} €",
+                "Capital pendiente": "{:,.2f} €"
+            }), use_container_width=True)
+
+            st.download_button(
+                label="Descargar cuadro (Excel)",
+                data=descargar_df(df_cuadro),
+                file_name="cuadro_amortizacion_mixta.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            st.divider()
+            st.write("### Evolución de capital pendiente e intereses")
+            plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Mixta")
+# =============================
+# 2. PÁGINA HIPOTECA MIXTA (mejorada)
+# =============================
+elif pagina == "Hipoteca Mixta":
+    st.title("Calculadora de Hipoteca Mixta")
+    st.info("Simula una hipoteca con años a tipo fijo y años a tipo variable. Calcula cuotas, intereses y cuadro de amortización.")
+    st.divider()
+
+    years_fixed = st.number_input(
+        "Años a tipo fijo:", min_value=1, max_value=40, value=10,
+        help="Número de años iniciales con interés fijo."
+    )
+    years_total = st.number_input(
+        "Años totales de la hipoteca:", min_value=years_fixed, max_value=40, value=20,
+        help="Duración total de la hipoteca en años."
+    )
+    tipo_fijo = st.number_input(
+        "Tipo de interés fijo (%):", min_value=-2.0, max_value=20.0, value=2.0, step=0.1,
+        help="Interés aplicado durante los años fijos."
+    )
+    euribor = st.number_input(
+        "Euribor estimado para los años variables (%):", min_value=-3.0, max_value=10.0, value=2.0, step=0.1,
+        help="Estimación del Euríbor durante la fase variable."
+    )
+    diferencial = st.number_input(
+        "Diferencial sobre euribor (%):", min_value=0.0, max_value=5.0, value=1.0, step=0.1,
+        help="Porcentaje fijo que se suma al Euríbor en la fase variable."
+    )
+    principal = st.number_input(
+        "Importe total (€):", min_value=1000.0, max_value=1_000_000.0, value=150000.0, step=1000.0,
+        help="Cantidad total prestada por el banco."
+    )
+
+    # Validaciones y avisos
+    if years_total < years_fixed:
+        st.error("Los años totales no pueden ser menores que los años fijos.")
+    if tipo_fijo < 0:
+        st.warning("Tipo fijo negativo: escenario poco común, revisa el dato.")
+    if euribor + diferencial < 0:
+        st.info("Euríbor + diferencial negativo: podría dar cuotas menores; revisa si tu contrato tiene suelo.")
+
+    st.divider()
+
+    if st.button("Calcular", key="calcular_mixta"):
+        n_fijo = int(years_fixed * 12)
+        n_var = int((years_total - years_fixed) * 12)
+        r_fijo = (tipo_fijo / 100) / 12
+        r_var = ((euribor + diferencial) / 100) / 12
+
+        if n_fijo + n_var <= 0:
+            st.error("Plazo inválido.")
+        else:
+            # Cuota fase fija calculada a plazo completo (método clásico de mixtas comerciales)
+            cuota_fija = principal / (n_fijo + n_var) if r_fijo == 0 else principal * (r_fijo * (1 + r_fijo) ** (n_fijo + n_var)) / ((1 + r_fijo) ** (n_fijo + n_var) - 1)
+
+            pendiente = principal
+            intereses_mixta = 0.0
+
+            # Simula años fijos
+            for _ in range(n_fijo):
+                interes = pendiente * r_fijo
+                amortizacion = cuota_fija - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            # Cuota variable con capital remanente
+            if n_var > 0:
+                cuota_variable = pendiente / n_var if r_var == 0 else pendiente * (r_var * (1 + r_var) ** n_var) / ((1 + r_var) ** n_var - 1)
+            else:
+                cuota_variable = 0.0
+
+            # Simula años variables
+            for _ in range(n_var):
+                interes = pendiente * r_var
+                amortizacion = cuota_variable - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            st.success("¡Cálculo realizado con éxito!")
+            # Métricas principales
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Cuota fija", f"{cuota_fija:,.2f} €")
+            c2.metric("Cuota variable", f"{cuota_variable:,.2f} €")
+            c3.metric("Intereses totales", f"{intereses_mixta:,.2f} €")
+
+            st.divider()
+            df_cuadro = cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var, cuota_fija, cuota_variable)
+            st.write("### Cuadro de amortización (anual)")
+            st.dataframe(df_cuadro.style.format({
+                "Cuota total pagada": "{:,.2f} €",
+                "Intereses pagados": "{:,.2f} €",
+                "Capital amortizado": "{:,.2f} €",
+                "Capital pendiente": "{:,.2f} €"
+            }), use_container_width=True)
+
+            st.download_button(
+                label="Descargar cuadro (Excel)",
+                data=descargar_df(df_cuadro),
+                file_name="cuadro_amortizacion_mixta.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            st.divider()
+            st.write("### Evolución de capital pendiente e intereses")
+            plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Mixta")
+# =============================
+# 2. PÁGINA HIPOTECA MIXTA (mejorada)
+# =============================
+elif pagina == "Hipoteca Mixta":
+    st.title("Calculadora de Hipoteca Mixta")
+    st.info("Simula una hipoteca con años a tipo fijo y años a tipo variable. Calcula cuotas, intereses y cuadro de amortización.")
+    st.divider()
+
+    years_fixed = st.number_input(
+        "Años a tipo fijo:", min_value=1, max_value=40, value=10,
+        help="Número de años iniciales con interés fijo."
+    )
+    years_total = st.number_input(
+        "Años totales de la hipoteca:", min_value=years_fixed, max_value=40, value=20,
+        help="Duración total de la hipoteca en años."
+    )
+    tipo_fijo = st.number_input(
+        "Tipo de interés fijo (%):", min_value=-2.0, max_value=20.0, value=2.0, step=0.1,
+        help="Interés aplicado durante los años fijos."
+    )
+    euribor = st.number_input(
+        "Euribor estimado para los años variables (%):", min_value=-3.0, max_value=10.0, value=2.0, step=0.1,
+        help="Estimación del Euríbor durante la fase variable."
+    )
+    diferencial = st.number_input(
+        "Diferencial sobre euribor (%):", min_value=0.0, max_value=5.0, value=1.0, step=0.1,
+        help="Porcentaje fijo que se suma al Euríbor en la fase variable."
+    )
+    principal = st.number_input(
+        "Importe total (€):", min_value=1000.0, max_value=1_000_000.0, value=150000.0, step=1000.0,
+        help="Cantidad total prestada por el banco."
+    )
+
+    # Validaciones y avisos
+    if years_total < years_fixed:
+        st.error("Los años totales no pueden ser menores que los años fijos.")
+    if tipo_fijo < 0:
+        st.warning("Tipo fijo negativo: escenario poco común, revisa el dato.")
+    if euribor + diferencial < 0:
+        st.info("Euríbor + diferencial negativo: podría dar cuotas menores; revisa si tu contrato tiene suelo.")
+
+    st.divider()
+
+    if st.button("Calcular", key="calcular_mixta"):
+        n_fijo = int(years_fixed * 12)
+        n_var = int((years_total - years_fixed) * 12)
+        r_fijo = (tipo_fijo / 100) / 12
+        r_var = ((euribor + diferencial) / 100) / 12
+
+        if n_fijo + n_var <= 0:
+            st.error("Plazo inválido.")
+        else:
+            # Cuota fase fija calculada a plazo completo (método clásico de mixtas comerciales)
+            cuota_fija = principal / (n_fijo + n_var) if r_fijo == 0 else principal * (r_fijo * (1 + r_fijo) ** (n_fijo + n_var)) / ((1 + r_fijo) ** (n_fijo + n_var) - 1)
+
+            pendiente = principal
+            intereses_mixta = 0.0
+
+            # Simula años fijos
+            for _ in range(n_fijo):
+                interes = pendiente * r_fijo
+                amortizacion = cuota_fija - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            # Cuota variable con capital remanente
+            if n_var > 0:
+                cuota_variable = pendiente / n_var if r_var == 0 else pendiente * (r_var * (1 + r_var) ** n_var) / ((1 + r_var) ** n_var - 1)
+            else:
+                cuota_variable = 0.0
+
+            # Simula años variables
+            for _ in range(n_var):
+                interes = pendiente * r_var
+                amortizacion = cuota_variable - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            st.success("¡Cálculo realizado con éxito!")
+            # Métricas principales
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Cuota fija", f"{cuota_fija:,.2f} €")
+            c2.metric("Cuota variable", f"{cuota_variable:,.2f} €")
+            c3.metric("Intereses totales", f"{intereses_mixta:,.2f} €")
+
+            st.divider()
+            df_cuadro = cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var, cuota_fija, cuota_variable)
+            st.write("### Cuadro de amortización (anual)")
+            st.dataframe(df_cuadro.style.format({
+                "Cuota total pagada": "{:,.2f} €",
+                "Intereses pagados": "{:,.2f} €",
+                "Capital amortizado": "{:,.2f} €",
+                "Capital pendiente": "{:,.2f} €"
+            }), use_container_width=True)
+
+            st.download_button(
+                label="Descargar cuadro (Excel)",
+                data=descargar_df(df_cuadro),
+                file_name="cuadro_amortizacion_mixta.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            st.divider()
+            st.write("### Evolución de capital pendiente e intereses")
+            plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Mixta")
+# =============================
+# 2. PÁGINA HIPOTECA MIXTA (mejorada)
+# =============================
+elif pagina == "Hipoteca Mixta":
+    st.title("Calculadora de Hipoteca Mixta")
+    st.info("Simula una hipoteca con años a tipo fijo y años a tipo variable. Calcula cuotas, intereses y cuadro de amortización.")
+    st.divider()
+
+    years_fixed = st.number_input(
+        "Años a tipo fijo:", min_value=1, max_value=40, value=10,
+        help="Número de años iniciales con interés fijo."
+    )
+    years_total = st.number_input(
+        "Años totales de la hipoteca:", min_value=years_fixed, max_value=40, value=20,
+        help="Duración total de la hipoteca en años."
+    )
+    tipo_fijo = st.number_input(
+        "Tipo de interés fijo (%):", min_value=-2.0, max_value=20.0, value=2.0, step=0.1,
+        help="Interés aplicado durante los años fijos."
+    )
+    euribor = st.number_input(
+        "Euribor estimado para los años variables (%):", min_value=-3.0, max_value=10.0, value=2.0, step=0.1,
+        help="Estimación del Euríbor durante la fase variable."
+    )
+    diferencial = st.number_input(
+        "Diferencial sobre euribor (%):", min_value=0.0, max_value=5.0, value=1.0, step=0.1,
+        help="Porcentaje fijo que se suma al Euríbor en la fase variable."
+    )
+    principal = st.number_input(
+        "Importe total (€):", min_value=1000.0, max_value=1_000_000.0, value=150000.0, step=1000.0,
+        help="Cantidad total prestada por el banco."
+    )
+
+    # Validaciones y avisos
+    if years_total < years_fixed:
+        st.error("Los años totales no pueden ser menores que los años fijos.")
+    if tipo_fijo < 0:
+        st.warning("Tipo fijo negativo: escenario poco común, revisa el dato.")
+    if euribor + diferencial < 0:
+        st.info("Euríbor + diferencial negativo: podría dar cuotas menores; revisa si tu contrato tiene suelo.")
+
+    st.divider()
+
+    if st.button("Calcular", key="calcular_mixta"):
+        n_fijo = int(years_fixed * 12)
+        n_var = int((years_total - years_fixed) * 12)
+        r_fijo = (tipo_fijo / 100) / 12
+        r_var = ((euribor + diferencial) / 100) / 12
+
+        if n_fijo + n_var <= 0:
+            st.error("Plazo inválido.")
+        else:
+            # Cuota fase fija calculada a plazo completo (método clásico de mixtas comerciales)
+            cuota_fija = principal / (n_fijo + n_var) if r_fijo == 0 else principal * (r_fijo * (1 + r_fijo) ** (n_fijo + n_var)) / ((1 + r_fijo) ** (n_fijo + n_var) - 1)
+
+            pendiente = principal
+            intereses_mixta = 0.0
+
+            # Simula años fijos
+            for _ in range(n_fijo):
+                interes = pendiente * r_fijo
+                amortizacion = cuota_fija - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            # Cuota variable con capital remanente
+            if n_var > 0:
+                cuota_variable = pendiente / n_var if r_var == 0 else pendiente * (r_var * (1 + r_var) ** n_var) / ((1 + r_var) ** n_var - 1)
+            else:
+                cuota_variable = 0.0
+
+            # Simula años variables
+            for _ in range(n_var):
+                interes = pendiente * r_var
+                amortizacion = cuota_variable - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            st.success("¡Cálculo realizado con éxito!")
+            # Métricas principales
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Cuota fija", f"{cuota_fija:,.2f} €")
+            c2.metric("Cuota variable", f"{cuota_variable:,.2f} €")
+            c3.metric("Intereses totales", f"{intereses_mixta:,.2f} €")
+
+            st.divider()
+            df_cuadro = cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var, cuota_fija, cuota_variable)
+            st.write("### Cuadro de amortización (anual)")
+            st.dataframe(df_cuadro.style.format({
+                "Cuota total pagada": "{:,.2f} €",
+                "Intereses pagados": "{:,.2f} €",
+                "Capital amortizado": "{:,.2f} €",
+                "Capital pendiente": "{:,.2f} €"
+            }), use_container_width=True)
+
+            st.download_button(
+                label="Descargar cuadro (Excel)",
+                data=descargar_df(df_cuadro),
+                file_name="cuadro_amortizacion_mixta.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            st.divider()
+            st.write("### Evolución de capital pendiente e intereses")
+            plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Mixta")
+# =============================
+# 2. PÁGINA HIPOTECA MIXTA (mejorada)
+# =============================
+elif pagina == "Hipoteca Mixta":
+    st.title("Calculadora de Hipoteca Mixta")
+    st.info("Simula una hipoteca con años a tipo fijo y años a tipo variable. Calcula cuotas, intereses y cuadro de amortización.")
+    st.divider()
+
+    years_fixed = st.number_input(
+        "Años a tipo fijo:", min_value=1, max_value=40, value=10,
+        help="Número de años iniciales con interés fijo."
+    )
+    years_total = st.number_input(
+        "Años totales de la hipoteca:", min_value=years_fixed, max_value=40, value=20,
+        help="Duración total de la hipoteca en años."
+    )
+    tipo_fijo = st.number_input(
+        "Tipo de interés fijo (%):", min_value=-2.0, max_value=20.0, value=2.0, step=0.1,
+        help="Interés aplicado durante los años fijos."
+    )
+    euribor = st.number_input(
+        "Euribor estimado para los años variables (%):", min_value=-3.0, max_value=10.0, value=2.0, step=0.1,
+        help="Estimación del Euríbor durante la fase variable."
+    )
+    diferencial = st.number_input(
+        "Diferencial sobre euribor (%):", min_value=0.0, max_value=5.0, value=1.0, step=0.1,
+        help="Porcentaje fijo que se suma al Euríbor en la fase variable."
+    )
+    principal = st.number_input(
+        "Importe total (€):", min_value=1000.0, max_value=1_000_000.0, value=150000.0, step=1000.0,
+        help="Cantidad total prestada por el banco."
+    )
+
+    # Validaciones y avisos
+    if years_total < years_fixed:
+        st.error("Los años totales no pueden ser menores que los años fijos.")
+    if tipo_fijo < 0:
+        st.warning("Tipo fijo negativo: escenario poco común, revisa el dato.")
+    if euribor + diferencial < 0:
+        st.info("Euríbor + diferencial negativo: podría dar cuotas menores; revisa si tu contrato tiene suelo.")
+
+    st.divider()
+
+    if st.button("Calcular", key="calcular_mixta"):
+        n_fijo = int(years_fixed * 12)
+        n_var = int((years_total - years_fixed) * 12)
+        r_fijo = (tipo_fijo / 100) / 12
+        r_var = ((euribor + diferencial) / 100) / 12
+
+        if n_fijo + n_var <= 0:
+            st.error("Plazo inválido.")
+        else:
+            # Cuota fase fija calculada a plazo completo (método clásico de mixtas comerciales)
+            cuota_fija = principal / (n_fijo + n_var) if r_fijo == 0 else principal * (r_fijo * (1 + r_fijo) ** (n_fijo + n_var)) / ((1 + r_fijo) ** (n_fijo + n_var) - 1)
+
+            pendiente = principal
+            intereses_mixta = 0.0
+
+            # Simula años fijos
+            for _ in range(n_fijo):
+                interes = pendiente * r_fijo
+                amortizacion = cuota_fija - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            # Cuota variable con capital remanente
+            if n_var > 0:
+                cuota_variable = pendiente / n_var if r_var == 0 else pendiente * (r_var * (1 + r_var) ** n_var) / ((1 + r_var) ** n_var - 1)
+            else:
+                cuota_variable = 0.0
+
+            # Simula años variables
+            for _ in range(n_var):
+                interes = pendiente * r_var
+                amortizacion = cuota_variable - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            st.success("¡Cálculo realizado con éxito!")
+            # Métricas principales
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Cuota fija", f"{cuota_fija:,.2f} €")
+            c2.metric("Cuota variable", f"{cuota_variable:,.2f} €")
+            c3.metric("Intereses totales", f"{intereses_mixta:,.2f} €")
+
+            st.divider()
+            df_cuadro = cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var, cuota_fija, cuota_variable)
+            st.write("### Cuadro de amortización (anual)")
+            st.dataframe(df_cuadro.style.format({
+                "Cuota total pagada": "{:,.2f} €",
+                "Intereses pagados": "{:,.2f} €",
+                "Capital amortizado": "{:,.2f} €",
+                "Capital pendiente": "{:,.2f} €"
+            }), use_container_width=True)
+
+            st.download_button(
+                label="Descargar cuadro (Excel)",
+                data=descargar_df(df_cuadro),
+                file_name="cuadro_amortizacion_mixta.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            st.divider()
+            st.write("### Evolución de capital pendiente e intereses")
+            plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Mixta")
+# =============================
+# 2. PÁGINA HIPOTECA MIXTA (mejorada)
+# =============================
+elif pagina == "Hipoteca Mixta":
+    st.title("Calculadora de Hipoteca Mixta")
+    st.info("Simula una hipoteca con años a tipo fijo y años a tipo variable. Calcula cuotas, intereses y cuadro de amortización.")
+    st.divider()
+
+    years_fixed = st.number_input(
+        "Años a tipo fijo:", min_value=1, max_value=40, value=10,
+        help="Número de años iniciales con interés fijo."
+    )
+    years_total = st.number_input(
+        "Años totales de la hipoteca:", min_value=years_fixed, max_value=40, value=20,
+        help="Duración total de la hipoteca en años."
+    )
+    tipo_fijo = st.number_input(
+        "Tipo de interés fijo (%):", min_value=-2.0, max_value=20.0, value=2.0, step=0.1,
+        help="Interés aplicado durante los años fijos."
+    )
+    euribor = st.number_input(
+        "Euribor estimado para los años variables (%):", min_value=-3.0, max_value=10.0, value=2.0, step=0.1,
+        help="Estimación del Euríbor durante la fase variable."
+    )
+    diferencial = st.number_input(
+        "Diferencial sobre euribor (%):", min_value=0.0, max_value=5.0, value=1.0, step=0.1,
+        help="Porcentaje fijo que se suma al Euríbor en la fase variable."
+    )
+    principal = st.number_input(
+        "Importe total (€):", min_value=1000.0, max_value=1_000_000.0, value=150000.0, step=1000.0,
+        help="Cantidad total prestada por el banco."
+    )
+
+    # Validaciones y avisos
+    if years_total < years_fixed:
+        st.error("Los años totales no pueden ser menores que los años fijos.")
+    if tipo_fijo < 0:
+        st.warning("Tipo fijo negativo: escenario poco común, revisa el dato.")
+    if euribor + diferencial < 0:
+        st.info("Euríbor + diferencial negativo: podría dar cuotas menores; revisa si tu contrato tiene suelo.")
+
+    st.divider()
+
+    if st.button("Calcular", key="calcular_mixta"):
+        n_fijo = int(years_fixed * 12)
+        n_var = int((years_total - years_fixed) * 12)
+        r_fijo = (tipo_fijo / 100) / 12
+        r_var = ((euribor + diferencial) / 100) / 12
+
+        if n_fijo + n_var <= 0:
+            st.error("Plazo inválido.")
+        else:
+            # Cuota fase fija calculada a plazo completo (método clásico de mixtas comerciales)
+            cuota_fija = principal / (n_fijo + n_var) if r_fijo == 0 else principal * (r_fijo * (1 + r_fijo) ** (n_fijo + n_var)) / ((1 + r_fijo) ** (n_fijo + n_var) - 1)
+
+            pendiente = principal
+            intereses_mixta = 0.0
+
+            # Simula años fijos
+            for _ in range(n_fijo):
+                interes = pendiente * r_fijo
+                amortizacion = cuota_fija - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            # Cuota variable con capital remanente
+            if n_var > 0:
+                cuota_variable = pendiente / n_var if r_var == 0 else pendiente * (r_var * (1 + r_var) ** n_var) / ((1 + r_var) ** n_var - 1)
+            else:
+                cuota_variable = 0.0
+
+            # Simula años variables
+            for _ in range(n_var):
+                interes = pendiente * r_var
+                amortizacion = cuota_variable - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            st.success("¡Cálculo realizado con éxito!")
+            # Métricas principales
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Cuota fija", f"{cuota_fija:,.2f} €")
+            c2.metric("Cuota variable", f"{cuota_variable:,.2f} €")
+            c3.metric("Intereses totales", f"{intereses_mixta:,.2f} €")
+
+            st.divider()
+            df_cuadro = cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var, cuota_fija, cuota_variable)
+            st.write("### Cuadro de amortización (anual)")
+            st.dataframe(df_cuadro.style.format({
+                "Cuota total pagada": "{:,.2f} €",
+                "Intereses pagados": "{:,.2f} €",
+                "Capital amortizado": "{:,.2f} €",
+                "Capital pendiente": "{:,.2f} €"
+            }), use_container_width=True)
+
+            st.download_button(
+                label="Descargar cuadro (Excel)",
+                data=descargar_df(df_cuadro),
+                file_name="cuadro_amortizacion_mixta.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            st.divider()
+            st.write("### Evolución de capital pendiente e intereses")
+            plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Mixta")
+# =============================
+# 2. PÁGINA HIPOTECA MIXTA (mejorada)
+# =============================
+elif pagina == "Hipoteca Mixta":
+    st.title("Calculadora de Hipoteca Mixta")
+    st.info("Simula una hipoteca con años a tipo fijo y años a tipo variable. Calcula cuotas, intereses y cuadro de amortización.")
+    st.divider()
+
+    years_fixed = st.number_input(
+        "Años a tipo fijo:", min_value=1, max_value=40, value=10,
+        help="Número de años iniciales con interés fijo."
+    )
+    years_total = st.number_input(
+        "Años totales de la hipoteca:", min_value=years_fixed, max_value=40, value=20,
+        help="Duración total de la hipoteca en años."
+    )
+    tipo_fijo = st.number_input(
+        "Tipo de interés fijo (%):", min_value=-2.0, max_value=20.0, value=2.0, step=0.1,
+        help="Interés aplicado durante los años fijos."
+    )
+    euribor = st.number_input(
+        "Euribor estimado para los años variables (%):", min_value=-3.0, max_value=10.0, value=2.0, step=0.1,
+        help="Estimación del Euríbor durante la fase variable."
+    )
+    diferencial = st.number_input(
+        "Diferencial sobre euribor (%):", min_value=0.0, max_value=5.0, value=1.0, step=0.1,
+        help="Porcentaje fijo que se suma al Euríbor en la fase variable."
+    )
+    principal = st.number_input(
+        "Importe total (€):", min_value=1000.0, max_value=1_000_000.0, value=150000.0, step=1000.0,
+        help="Cantidad total prestada por el banco."
+    )
+
+    # Validaciones y avisos
+    if years_total < years_fixed:
+        st.error("Los años totales no pueden ser menores que los años fijos.")
+    if tipo_fijo < 0:
+        st.warning("Tipo fijo negativo: escenario poco común, revisa el dato.")
+    if euribor + diferencial < 0:
+        st.info("Euríbor + diferencial negativo: podría dar cuotas menores; revisa si tu contrato tiene suelo.")
+
+    st.divider()
+
+    if st.button("Calcular", key="calcular_mixta"):
+        n_fijo = int(years_fixed * 12)
+        n_var = int((years_total - years_fixed) * 12)
+        r_fijo = (tipo_fijo / 100) / 12
+        r_var = ((euribor + diferencial) / 100) / 12
+
+        if n_fijo + n_var <= 0:
+            st.error("Plazo inválido.")
+        else:
+            # Cuota fase fija calculada a plazo completo (método clásico de mixtas comerciales)
+            cuota_fija = principal / (n_fijo + n_var) if r_fijo == 0 else principal * (r_fijo * (1 + r_fijo) ** (n_fijo + n_var)) / ((1 + r_fijo) ** (n_fijo + n_var) - 1)
+
+            pendiente = principal
+            intereses_mixta = 0.0
+
+            # Simula años fijos
+            for _ in range(n_fijo):
+                interes = pendiente * r_fijo
+                amortizacion = cuota_fija - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            # Cuota variable con capital remanente
+            if n_var > 0:
+                cuota_variable = pendiente / n_var if r_var == 0 else pendiente * (r_var * (1 + r_var) ** n_var) / ((1 + r_var) ** n_var - 1)
+            else:
+                cuota_variable = 0.0
+
+            # Simula años variables
+            for _ in range(n_var):
+                interes = pendiente * r_var
+                amortizacion = cuota_variable - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            st.success("¡Cálculo realizado con éxito!")
+            # Métricas principales
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Cuota fija", f"{cuota_fija:,.2f} €")
+            c2.metric("Cuota variable", f"{cuota_variable:,.2f} €")
+            c3.metric("Intereses totales", f"{intereses_mixta:,.2f} €")
+
+            st.divider()
+            df_cuadro = cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var, cuota_fija, cuota_variable)
+            st.write("### Cuadro de amortización (anual)")
+            st.dataframe(df_cuadro.style.format({
+                "Cuota total pagada": "{:,.2f} €",
+                "Intereses pagados": "{:,.2f} €",
+                "Capital amortizado": "{:,.2f} €",
+                "Capital pendiente": "{:,.2f} €"
+            }), use_container_width=True)
+
+            st.download_button(
+                label="Descargar cuadro (Excel)",
+                data=descargar_df(df_cuadro),
+                file_name="cuadro_amortizacion_mixta.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            st.divider()
+            st.write("### Evolución de capital pendiente e intereses")
+            plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Mixta")
+# =============================
+# 2. PÁGINA HIPOTECA MIXTA (mejorada)
+# =============================
+elif pagina == "Hipoteca Mixta":
+    st.title("Calculadora de Hipoteca Mixta")
+    st.info("Simula una hipoteca con años a tipo fijo y años a tipo variable. Calcula cuotas, intereses y cuadro de amortización.")
+    st.divider()
+
+    years_fixed = st.number_input(
+        "Años a tipo fijo:", min_value=1, max_value=40, value=10,
+        help="Número de años iniciales con interés fijo."
+    )
+    years_total = st.number_input(
+        "Años totales de la hipoteca:", min_value=years_fixed, max_value=40, value=20,
+        help="Duración total de la hipoteca en años."
+    )
+    tipo_fijo = st.number_input(
+        "Tipo de interés fijo (%):", min_value=-2.0, max_value=20.0, value=2.0, step=0.1,
+        help="Interés aplicado durante los años fijos."
+    )
+    euribor = st.number_input(
+        "Euribor estimado para los años variables (%):", min_value=-3.0, max_value=10.0, value=2.0, step=0.1,
+        help="Estimación del Euríbor durante la fase variable."
+    )
+    diferencial = st.number_input(
+        "Diferencial sobre euribor (%):", min_value=0.0, max_value=5.0, value=1.0, step=0.1,
+        help="Porcentaje fijo que se suma al Euríbor en la fase variable."
+    )
+    principal = st.number_input(
+        "Importe total (€):", min_value=1000.0, max_value=1_000_000.0, value=150000.0, step=1000.0,
+        help="Cantidad total prestada por el banco."
+    )
+
+    # Validaciones y avisos
+    if years_total < years_fixed:
+        st.error("Los años totales no pueden ser menores que los años fijos.")
+    if tipo_fijo < 0:
+        st.warning("Tipo fijo negativo: escenario poco común, revisa el dato.")
+    if euribor + diferencial < 0:
+        st.info("Euríbor + diferencial negativo: podría dar cuotas menores; revisa si tu contrato tiene suelo.")
+
+    st.divider()
+
+    if st.button("Calcular", key="calcular_mixta"):
+        n_fijo = int(years_fixed * 12)
+        n_var = int((years_total - years_fixed) * 12)
+        r_fijo = (tipo_fijo / 100) / 12
+        r_var = ((euribor + diferencial) / 100) / 12
+
+        if n_fijo + n_var <= 0:
+            st.error("Plazo inválido.")
+        else:
+            # Cuota fase fija calculada a plazo completo (método clásico de mixtas comerciales)
+            cuota_fija = principal / (n_fijo + n_var) if r_fijo == 0 else principal * (r_fijo * (1 + r_fijo) ** (n_fijo + n_var)) / ((1 + r_fijo) ** (n_fijo + n_var) - 1)
+
+            pendiente = principal
+            intereses_mixta = 0.0
+
+            # Simula años fijos
+            for _ in range(n_fijo):
+                interes = pendiente * r_fijo
+                amortizacion = cuota_fija - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            # Cuota variable con capital remanente
+            if n_var > 0:
+                cuota_variable = pendiente / n_var if r_var == 0 else pendiente * (r_var * (1 + r_var) ** n_var) / ((1 + r_var) ** n_var - 1)
+            else:
+                cuota_variable = 0.0
+
+            # Simula años variables
+            for _ in range(n_var):
+                interes = pendiente * r_var
+                amortizacion = cuota_variable - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            st.success("¡Cálculo realizado con éxito!")
+            # Métricas principales
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Cuota fija", f"{cuota_fija:,.2f} €")
+            c2.metric("Cuota variable", f"{cuota_variable:,.2f} €")
+            c3.metric("Intereses totales", f"{intereses_mixta:,.2f} €")
+
+            st.divider()
+            df_cuadro = cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var, cuota_fija, cuota_variable)
+            st.write("### Cuadro de amortización (anual)")
+            st.dataframe(df_cuadro.style.format({
+                "Cuota total pagada": "{:,.2f} €",
+                "Intereses pagados": "{:,.2f} €",
+                "Capital amortizado": "{:,.2f} €",
+                "Capital pendiente": "{:,.2f} €"
+            }), use_container_width=True)
+
+            st.download_button(
+                label="Descargar cuadro (Excel)",
+                data=descargar_df(df_cuadro),
+                file_name="cuadro_amortizacion_mixta.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            st.divider()
+            st.write("### Evolución de capital pendiente e intereses")
+            plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Mixta")
+# =============================
+# 2. PÁGINA HIPOTECA MIXTA (mejorada)
+# =============================
+elif pagina == "Hipoteca Mixta":
+    st.title("Calculadora de Hipoteca Mixta")
+    st.info("Simula una hipoteca con años a tipo fijo y años a tipo variable. Calcula cuotas, intereses y cuadro de amortización.")
+    st.divider()
+
+    years_fixed = st.number_input(
+        "Años a tipo fijo:", min_value=1, max_value=40, value=10,
+        help="Número de años iniciales con interés fijo."
+    )
+    years_total = st.number_input(
+        "Años totales de la hipoteca:", min_value=years_fixed, max_value=40, value=20,
+        help="Duración total de la hipoteca en años."
+    )
+    tipo_fijo = st.number_input(
+        "Tipo de interés fijo (%):", min_value=-2.0, max_value=20.0, value=2.0, step=0.1,
+        help="Interés aplicado durante los años fijos."
+    )
+    euribor = st.number_input(
+        "Euribor estimado para los años variables (%):", min_value=-3.0, max_value=10.0, value=2.0, step=0.1,
+        help="Estimación del Euríbor durante la fase variable."
+    )
+    diferencial = st.number_input(
+        "Diferencial sobre euribor (%):", min_value=0.0, max_value=5.0, value=1.0, step=0.1,
+        help="Porcentaje fijo que se suma al Euríbor en la fase variable."
+    )
+    principal = st.number_input(
+        "Importe total (€):", min_value=1000.0, max_value=1_000_000.0, value=150000.0, step=1000.0,
+        help="Cantidad total prestada por el banco."
+    )
+
+    # Validaciones y avisos
+    if years_total < years_fixed:
+        st.error("Los años totales no pueden ser menores que los años fijos.")
+    if tipo_fijo < 0:
+        st.warning("Tipo fijo negativo: escenario poco común, revisa el dato.")
+    if euribor + diferencial < 0:
+        st.info("Euríbor + diferencial negativo: podría dar cuotas menores; revisa si tu contrato tiene suelo.")
+
+    st.divider()
+
+    if st.button("Calcular", key="calcular_mixta"):
+        n_fijo = int(years_fixed * 12)
+        n_var = int((years_total - years_fixed) * 12)
+        r_fijo = (tipo_fijo / 100) / 12
+        r_var = ((euribor + diferencial) / 100) / 12
+
+        if n_fijo + n_var <= 0:
+            st.error("Plazo inválido.")
+        else:
+            # Cuota fase fija calculada a plazo completo (método clásico de mixtas comerciales)
+            cuota_fija = principal / (n_fijo + n_var) if r_fijo == 0 else principal * (r_fijo * (1 + r_fijo) ** (n_fijo + n_var)) / ((1 + r_fijo) ** (n_fijo + n_var) - 1)
+
+            pendiente = principal
+            intereses_mixta = 0.0
+
+            # Simula años fijos
+            for _ in range(n_fijo):
+                interes = pendiente * r_fijo
+                amortizacion = cuota_fija - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            # Cuota variable con capital remanente
+            if n_var > 0:
+                cuota_variable = pendiente / n_var if r_var == 0 else pendiente * (r_var * (1 + r_var) ** n_var) / ((1 + r_var) ** n_var - 1)
+            else:
+                cuota_variable = 0.0
+
+            # Simula años variables
+            for _ in range(n_var):
+                interes = pendiente * r_var
+                amortizacion = cuota_variable - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            st.success("¡Cálculo realizado con éxito!")
+            # Métricas principales
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Cuota fija", f"{cuota_fija:,.2f} €")
+            c2.metric("Cuota variable", f"{cuota_variable:,.2f} €")
+            c3.metric("Intereses totales", f"{intereses_mixta:,.2f} €")
+
+            st.divider()
+            df_cuadro = cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var, cuota_fija, cuota_variable)
+            st.write("### Cuadro de amortización (anual)")
+            st.dataframe(df_cuadro.style.format({
+                "Cuota total pagada": "{:,.2f} €",
+                "Intereses pagados": "{:,.2f} €",
+                "Capital amortizado": "{:,.2f} €",
+                "Capital pendiente": "{:,.2f} €"
+            }), use_container_width=True)
+
+            st.download_button(
+                label="Descargar cuadro (Excel)",
+                data=descargar_df(df_cuadro),
+                file_name="cuadro_amortizacion_mixta.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            st.divider()
+            st.write("### Evolución de capital pendiente e intereses")
+            plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Mixta")
+# =============================
+# 2. PÁGINA HIPOTECA MIXTA (mejorada)
+# =============================
+elif pagina == "Hipoteca Mixta":
+    st.title("Calculadora de Hipoteca Mixta")
+    st.info("Simula una hipoteca con años a tipo fijo y años a tipo variable. Calcula cuotas, intereses y cuadro de amortización.")
+    st.divider()
+
+    years_fixed = st.number_input(
+        "Años a tipo fijo:", min_value=1, max_value=40, value=10,
+        help="Número de años iniciales con interés fijo."
+    )
+    years_total = st.number_input(
+        "Años totales de la hipoteca:", min_value=years_fixed, max_value=40, value=20,
+        help="Duración total de la hipoteca en años."
+    )
+    tipo_fijo = st.number_input(
+        "Tipo de interés fijo (%):", min_value=-2.0, max_value=20.0, value=2.0, step=0.1,
+        help="Interés aplicado durante los años fijos."
+    )
+    euribor = st.number_input(
+        "Euribor estimado para los años variables (%):", min_value=-3.0, max_value=10.0, value=2.0, step=0.1,
+        help="Estimación del Euríbor durante la fase variable."
+    )
+    diferencial = st.number_input(
+        "Diferencial sobre euribor (%):", min_value=0.0, max_value=5.0, value=1.0, step=0.1,
+        help="Porcentaje fijo que se suma al Euríbor en la fase variable."
+    )
+    principal = st.number_input(
+        "Importe total (€):", min_value=1000.0, max_value=1_000_000.0, value=150000.0, step=1000.0,
+        help="Cantidad total prestada por el banco."
+    )
+
+    # Validaciones y avisos
+    if years_total < years_fixed:
+        st.error("Los años totales no pueden ser menores que los años fijos.")
+    if tipo_fijo < 0:
+        st.warning("Tipo fijo negativo: escenario poco común, revisa el dato.")
+    if euribor + diferencial < 0:
+        st.info("Euríbor + diferencial negativo: podría dar cuotas menores; revisa si tu contrato tiene suelo.")
+
+    st.divider()
+
+    if st.button("Calcular", key="calcular_mixta"):
+        n_fijo = int(years_fixed * 12)
+        n_var = int((years_total - years_fixed) * 12)
+        r_fijo = (tipo_fijo / 100) / 12
+        r_var = ((euribor + diferencial) / 100) / 12
+
+        if n_fijo + n_var <= 0:
+            st.error("Plazo inválido.")
+        else:
+            # Cuota fase fija calculada a plazo completo (método clásico de mixtas comerciales)
+            cuota_fija = principal / (n_fijo + n_var) if r_fijo == 0 else principal * (r_fijo * (1 + r_fijo) ** (n_fijo + n_var)) / ((1 + r_fijo) ** (n_fijo + n_var) - 1)
+
+            pendiente = principal
+            intereses_mixta = 0.0
+
+            # Simula años fijos
+            for _ in range(n_fijo):
+                interes = pendiente * r_fijo
+                amortizacion = cuota_fija - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            # Cuota variable con capital remanente
+            if n_var > 0:
+                cuota_variable = pendiente / n_var if r_var == 0 else pendiente * (r_var * (1 + r_var) ** n_var) / ((1 + r_var) ** n_var - 1)
+            else:
+                cuota_variable = 0.0
+
+            # Simula años variables
+            for _ in range(n_var):
+                interes = pendiente * r_var
+                amortizacion = cuota_variable - interes
+                pendiente -= amortizacion
+                intereses_mixta += interes
+
+            st.success("¡Cálculo realizado con éxito!")
+            # Métricas principales
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Cuota fija", f"{cuota_fija:,.2f} €")
+            c2.metric("Cuota variable", f"{cuota_variable:,.2f} €")
+            c3.metric("Intereses totales", f"{intereses_mixta:,.2f} €")
+
+            st.divider()
+            df_cuadro = cuadro_amortizacion_mixta(principal, years_fixed, years_total, r_fijo, r_var, cuota_fija, cuota_variable)
+            st.write("### Cuadro de amortización (anual)")
+            st.dataframe(df_cuadro.style.format({
+                "Cuota total pagada": "{:,.2f} €",
+                "Intereses pagados": "{:,.2f} €",
+                "Capital amortizado": "{:,.2f} €",
+                "Capital pendiente": "{:,.2f} €"
+            }), use_container_width=True)
+
+            st.download_button(
+                label="Descargar cuadro (Excel)",
+                data=descargar_df(df_cuadro),
+                file_name="cuadro_amortizacion_mixta.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            st.divider()
+            st.write("### Evolución de capital pendiente e intereses")
+            plot_evolucion_plotly(df_cuadro, "Evolución Hipoteca Mixta")
+
 
 
 # =============================
